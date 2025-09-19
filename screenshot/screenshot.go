@@ -29,8 +29,8 @@ func (m *Manager) SetCaptureHandler(handler CaptureHandler) {
 	m.onCapture = handler
 }
 
-// Start 开始监听鼠标事件并等待截图操作
-func (m *Manager) Start() {
+// StartOnce 执行一次截图操作
+func (m *Manager) StartOnce() {
 	// 监听鼠标事件
 	fmt.Println("开始监听鼠标事件...")
 	fmt.Println("请按下鼠标左键并拖拽，然后释放来选择截图区域")
@@ -54,19 +54,19 @@ func (m *Manager) Start() {
 				fmt.Printf("鼠标按下: (%d, %d)\n", startX, startY)
 			}
 		case 8: // 鼠标释放
-			if ev.Button == hook.MouseMap["left"] {
-				if mousePressed {
-					endX, endY = int(ev.X), int(ev.Y)
-					mousePressed = false
-					fmt.Printf("鼠标释放: (%d, %d)\n", endX, endY)
-					
-					// 调用截图处理函数
-					if m.onCapture != nil {
-						if m.onCapture(startX, startY, endX, endY) {
-							return
-						}
-					}
+			if ev.Button == hook.MouseMap["left"] && mousePressed {
+				endX, endY = int(ev.X), int(ev.Y)
+				mousePressed = false
+				fmt.Printf("鼠标释放: (%d, %d)\n", endX, endY)
+				
+				// 调用截图处理函数
+				if m.onCapture != nil {
+					m.onCapture(startX, startY, endX, endY)
 				}
+				
+				// 完成截图后退出本次监听
+				fmt.Println("截图完成，等待下次热键触发...")
+				return
 			}
 		case 10: // 其他事件
 			// 忽略其他事件
