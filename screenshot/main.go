@@ -1,52 +1,92 @@
 package main
 
 import (
-	"fmt"
-	"image/png"
-	"os"
-	"time"
+    "fmt"
+    "image"
+    "image/png"
+    "os"
+    "time"
 
-	"github.com/kbinani/screenshot"
+    "github.com/kbinani/screenshot"
+    hook "github.com/robotn/gohook"
 )
 
 func main() {
-	fmt.Println("屏幕截图程序已启动...")
-	fmt.Println("请在5秒内将鼠标移动到截图区域的一个角")
-
-	// 等待用户准备
-	time.Sleep(5 * time.Second)
-	fmt.Println("5秒已过，请保持鼠标位置不变...")
-
-	// 为了简化，我们使用全屏截图
-	// 获取屏幕尺寸
-	bounds := screenshot.GetDisplayBounds(0)
-	
-	fmt.Printf("屏幕尺寸: %dx%d\n", bounds.Dx(), bounds.Dy())
-
-	// 获取全屏截图
-	img, err := screenshot.CaptureRect(bounds)
-	if err != nil {
-		fmt.Printf("截图失败: %v\n", err)
-		return
-	}
-
-	// 生成文件名
-	filename := fmt.Sprintf("screenshot_%s.png", time.Now().Format("20060102_150405"))
-
-	// 保存截图
-	file, err := os.Create(filename)
-	if err != nil {
-		fmt.Printf("创建文件失败: %v\n", err)
-		return
-	}
-	defer file.Close()
-
-	err = png.Encode(file, img)
-	if err != nil {
-		fmt.Printf("保存截图失败: %v\n", err)
-		return
-	}
-
-	fmt.Printf("全屏截图已保存为: %s\n", filename)
-	fmt.Println("程序将退出...")
+    // 监听鼠标事件
+    fmt.Println("开始监听鼠标事件...")
+    fmt.Println("请按下鼠标左键并拖拽，然后释放来选择截图区域")
+    
+    // 用于存储鼠标按下时的坐标
+    var startX, startY int
+    // 用于标记是否已经按下鼠标
+    mousePressed := false
+    
+    // 启动事件监听
+    evChan := hook.Start()
+    defer hook.End()
+    
+    for ev := range evChan {
+        // 检查事件类型
+        switch ev.Kind {
+        case hook.MouseDown:
+            // 鼠标按下事件
+            if ev.Button == hook.MouseMap["left"] {
+                startX, startY = int(ev.X), int(ev.Y)
+                mousePressed = true
+                fmt.Printf("鼠标按下: (%d, %d)\n", startX, startY)
+            }
+        case hook.MouseUp:
+            // 鼠标释放事件
+            if ev.Button == hook.MouseMap["left"] && mousePressed {
+                endX, endY := int(ev.X), int(ev.Y)
+                mousePressed = false
+                fmt.Printf("鼠标释放: (%d, %d)\n", endX, endY)
+                
+                // 调用截图函数
+                captureScreenshot(startX, startY, endX, endY)
+            }
+        }
+    }
 }
+// captureScreenshot 截取指定区域的屏幕
+func captureScreenshot(startX, startY, endX, endY int) {
+    // 确保坐标是正确的（左上到右下）
+    if startX > endX {
+        startX, endX = endX, startX
+    }
+    if startY > endY {
+        startY, endY = endY, startY
+    }
+    
+    // 创建一个 Rectangle 对象
+    rect := image.Rect(startX, startY, endX, endY)
+    
+    // 截图
+    img, err := screenshot.CaptureRect(rect)
+    if err != nil {
+        fmt.Printf("截图失败: %v\n", err)
+        return
+    }
+    
+    // 保存图片
+    saveImage(img, fmt.Sprintf("screenshot_%d.png", time.Now().Unix()))
+}
+
+// saveImage 保存图片
+func saveImage(img image.Image, filename string) {
+    file, err := os.Create(filename)
+    if err != nil {
+        fmt.Printf("创建文件失败: %v\n", err)
+        return
+    }
+    defer file.Close()
+    
+    err = png.Encode(file, img)
+    if err != nil {
+        fmt.Printf("保存图片失败: %v\n", err)
+        return
+    }
+    
+    fmt.Printf("图片已保存: %s\n", filename)
+}
+
