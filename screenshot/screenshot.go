@@ -1,4 +1,4 @@
-package main
+package screenshot
 
 import (
 	"fmt"
@@ -11,7 +11,26 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
-func main() {
+// CaptureHandler 截图处理函数类型
+type CaptureHandler func(startX, startY, endX, endY int) bool
+
+// Manager 截图管理器
+type Manager struct {
+	onCapture CaptureHandler
+}
+
+// NewManager 创建新的截图管理器
+func NewManager() *Manager {
+	return &Manager{}
+}
+
+// SetCaptureHandler 设置截图处理函数
+func (m *Manager) SetCaptureHandler(handler CaptureHandler) {
+	m.onCapture = handler
+}
+
+// Start 开始监听鼠标事件并等待截图操作
+func (m *Manager) Start() {
 	// 监听鼠标事件
 	fmt.Println("开始监听鼠标事件...")
 	fmt.Println("请按下鼠标左键并拖拽，然后释放来选择截图区域")
@@ -28,30 +47,35 @@ func main() {
 
 	for ev := range evChan {
 		switch ev.Kind {
-		case 7:
+		case 7: // 鼠标按下
 			if ev.Button == hook.MouseMap["left"] {
 				startX, startY = int(ev.X), int(ev.Y)
 				mousePressed = true
 				fmt.Printf("鼠标按下: (%d, %d)\n", startX, startY)
 			}
-		case 8:
+		case 8: // 鼠标释放
 			if ev.Button == hook.MouseMap["left"] {
 				if mousePressed {
 					endX, endY = int(ev.X), int(ev.Y)
 					mousePressed = false
 					fmt.Printf("鼠标释放: (%d, %d)\n", endX, endY)
-					if captureScreenshot(startX, startY, endX, endY) {
-						return
+					
+					// 调用截图处理函数
+					if m.onCapture != nil {
+						if m.onCapture(startX, startY, endX, endY) {
+							return
+						}
 					}
 				}
 			}
-		case 10:
+		case 10: // 其他事件
+			// 忽略其他事件
 		}
 	}
 }
 
-// captureScreenshot 截取指定区域的屏幕并保存
-func captureScreenshot(startX, startY, endX, endY int) bool {
+// Capture 截取指定区域的屏幕并保存
+func Capture(startX, startY, endX, endY int) bool {
 	// 确保坐标是正确的（左上到右下）
 	if startX > endX {
 		startX, endX = endX, startX
@@ -71,7 +95,8 @@ func captureScreenshot(startX, startY, endX, endY int) bool {
 	}
 
 	// 保存图片
-	if saveImage(img, fmt.Sprintf("screenshot_%d.png", time.Now().Unix())) {
+	filename := fmt.Sprintf("screenshot_%d.png", time.Now().Unix())
+	if saveImage(img, filename) {
 		return true
 	} else {
 		return false
