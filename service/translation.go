@@ -2,6 +2,7 @@ package service
 
 import (
 	"Translater/ai"
+	"Translater/prompts"
 	"Translater/screenshot"
 	"fmt"
 )
@@ -37,8 +38,7 @@ func (s *TranslationServiceImpl) ProcessScreenshot(startX, startY, endX, endY in
 	fmt.Println("截图成功，开始提取文字...")
 
 	// 使用ImageToWordsFromBytes函数提取文字
-	extractPrompt := "请提取这张图片中的所有文字内容，只返回文字，不要添加任何其他说明。"
-	extractResponse, err := s.AIClient.ImageToWords(extractPrompt, imageData, "image/png", "")
+	extractResponse, err := s.AIClient.ImageToWords(prompts.ExtractPrompt, imageData, "image/png", "")
 	if err != nil {
 		fmt.Printf("文字提取失败: %v\n", err)
 		return false
@@ -61,8 +61,7 @@ func (s *TranslationServiceImpl) ProcessScreenshot(startX, startY, endX, endY in
 		fmt.Println("开始翻译...")
 
 		// 使用Translate函数翻译成中文
-		translatePrompt := "请将以下文本翻译成中文，保持原文的格式和结构："
-		translateResponse, err := s.AIClient.Translate(textStr, translatePrompt)
+		translateResponse, err := s.AIClient.Translate(textStr, prompts.TranslatePrompt)
 		if err != nil {
 			fmt.Printf("翻译失败: %v\n", err)
 			return false
