@@ -1,58 +1,26 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"log"
-	"os"
-	"strings"
+	"Translater/ai"
+	"Translater/config"
 	"Translater/hotkey"
 	"Translater/screenshot"
-	"Translater/ai"
+	"Translater/service"
 )
 
-// readAPIKeyFromFile 直接从文件读取API密钥
-func readAPIKeyFromFile(filename string) (string, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "API-KEY") {
-			parts := strings.Split(line, "=")
-			if len(parts) >= 2 {
-				apiKey := strings.TrimSpace(parts[1])
-				// 移除引号
-				apiKey = strings.Trim(apiKey, "\"")
-				return apiKey, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("API-KEY not found in file")
-}
-
 func main() {
-	// 尝试从不同位置的文件读取API密钥
+	// 创建API密钥读取器
 	envFiles := []string{".env", "env"}
-	var apiKey string
-	var err error
-	
-	for _, envFile := range envFiles {
-		apiKey, err = readAPIKeyFromFile(envFile)
-		if err == nil {
-			fmt.Printf("Successfully read API key from %s file\n", envFile)
-			break
-		}
-	}
-	
-	if apiKey == "" {
+	apiKeyReader := config.NewFileAPIKeyReader(envFiles)
+
+	// 读取API密钥
+	apiKey, err := apiKeyReader.ReadAPIKey()
+	if err != nil {
 		log.Fatal("Could not load API key from any source")
 	}
+	fmt.Println("Successfully read API key from file")
 
 	// 创建热键管理器
 	hotkeyManager := hotkey.NewManager()
@@ -63,62 +31,13 @@ func main() {
 	// 创建AI客户端
 	aiClient := ai.NewZhipuAIClient(apiKey)
 
+	// 创建翻译服务
+	translationService := service.NewTranslationService(aiClient)
+
 	// 设置截图处理函数
 	screenshotManager.SetCaptureHandler(func(startX, startY, endX, endY int) bool {
-		fmt.Println("开始处理截图...")
-		
-		// 使用新的CaptureToBytes函数获取图像数据，不保存文件
-		imageData, err := screenshot.CaptureToBytes(startX, startY, endX, endY)
-		if err != nil {
-			fmt.Printf("截图失败: %v\n", err)
-			return false
-		}
-		
-		fmt.Println("截图成功，开始提取文字...")
-		
-		// 使用ImageToWordsFromBytes函数提取文字
-		extractPrompt := "请提取这张图片中的所有文字内容，只返回文字，不要添加任何其他说明。"
-		extractResponse, err := aiClient.ImageToWordsFromBytes(extractPrompt, imageData, "image/png", "")
-		if err != nil {
-			fmt.Printf("文字提取失败: %v\n", err)
-			return false
-		}
-		
-		// 获取提取的文字内容
-		extractedText := extractResponse.Choices[0].Message.Content
-		var textStr string
-		if str, ok := extractedText.(string); ok {
-			textStr = str
-		} else {
-			fmt.Printf("提取的文字内容格式错误: %v\n", extractedText)
-			return false
-		}
-		
-		fmt.Printf("提取到的文字: %s\n", textStr)
-		
-		// 如果提取到了文字，则进行翻译
-		if textStr != "" {
-			fmt.Println("开始翻译...")
-			
-			// 使用Translate函数翻译成中文
-			translatePrompt := "请将以下文本翻译成中文，保持原文的格式和结构："
-			translateResponse, err := aiClient.Translate(textStr, translatePrompt)
-			if err != nil {
-				fmt.Printf("翻译失败: %v\n", err)
-				return false
-			}
-			
-			// 获取翻译结果
-			translatedText := translateResponse.Choices[0].Message.Content
-			fmt.Printf("翻译结果: %s\n", translatedText)
-			
-			// 这里可以添加将翻译结果显示给用户的逻辑，比如弹出窗口或复制到剪贴板
-			fmt.Println("处理完成！")
-		} else {
-			fmt.Println("未提取到文字内容")
-		}
-		
-		return true
+		// 使用翻译服务处理截图
+		return translationService.ProcessScreenshot(startX, startY, endX, endY)
 	})
 
 	// 注册热键，当触发时启动截图
