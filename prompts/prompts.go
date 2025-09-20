@@ -1,7 +1,7 @@
 package prompts
 
 // System prompts for different operations
-const (
+var (
 	// ExtractPrompt 用于从图片中提取文字的提示词
 	ExtractPrompt = "请提取这张图片中的所有文字内容，只返回文字，不要添加任何其他说明。"
 
