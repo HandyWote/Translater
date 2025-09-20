@@ -35,14 +35,11 @@ func (r *FileAPIKeyReader) ReadAPIKeyFromFile(filename string) (string, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "API-KEY") {
-			parts := strings.Split(line, "=")
-			if len(parts) >= 2 {
-				apiKey := strings.TrimSpace(parts[1])
-				// 移除引号
-				apiKey = strings.Trim(apiKey, "\"")
-				return apiKey, nil
-			}
+		if !strings.HasPrefix(line, "API-KEY") { continue }
+		parts := strings.Split(line, "=")
+		if len(parts) >= 2 {
+			apiKey := strings.TrimSpace(parts[1])
+			return apiKey, nil
 		}
 	}
 

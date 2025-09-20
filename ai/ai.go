@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // ZhipuAIRequest 表示发送给智谱AI的请求结构
@@ -163,92 +160,8 @@ func (c *ZhipuAIClient) Translate(userMessage string, systemPrompt string) (*Zhi
 	return c.PostRequest(request)
 }
 
-func (c *ZhipuAIClient) ImageToWords(userMessage string, imagePath string, systemPrompt string) (*ZhipuAIResponse, error) {
-	messages := []Message{}
-
-	// 添加系统提示词（如果提供）
-	if systemPrompt != "" {
-		messages = append(messages, Message{
-			Role:    "system",
-			Content: systemPrompt,
-		})
-	}
-
-	// 构建多模态内容
-	content := []ContentItem{
-		{
-			Type: "text",
-			Text: userMessage,
-		},
-	}
-
-	var data []byte
-	var mimeType string
-
-	// 将本地图片转换为data URL
-	file, err := os.Open(imagePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open image file: %v", err)
-	}
-	defer file.Close()
-
-	// 读取文件数据
-	data, err = io.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read image file: %v", err)
-	}
-
-	// 获取文件扩展名
-	ext := strings.ToLower(filepath.Ext(imagePath))
-
-	// 根据文件类型确定MIME类型
-	switch ext {
-	case ".jpg", ".jpeg":
-		mimeType = "image/jpeg"
-	case ".png":
-		mimeType = "image/png"
-	case ".gif":
-		mimeType = "image/gif"
-	case ".webp":
-		mimeType = "image/webp"
-	default:
-		return nil, fmt.Errorf("unsupported image format: %s", ext)
-	}
-
-	// 进行base64编码
-	encoded := base64.StdEncoding.EncodeToString(data)
-
-	// 构建data URL
-	imageURL := fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
-
-	// 添加图像到内容
-	content = append(content, ContentItem{
-		Type: "image_url",
-		ImageURL: struct {
-			URL string `json:"url"`
-		}{
-			URL: imageURL,
-		},
-	})
-
-	// 添加用户消息
-	messages = append(messages, Message{
-		Role:    "user",
-		Content: content,
-	})
-
-	request := ZhipuAIRequest{
-		Model:       "glm-4v-flash",
-		Messages:    messages,
-		Temperature: 0.7,
-		TopP:        0.9,
-	}
-
-	return c.PostRequest(request)
-}
-
-// ImageToWordsFromBytes 直接从图像字节数据提取文字
-func (c *ZhipuAIClient) ImageToWordsFromBytes(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
+// ImageToWords 直接从图像字节数据提取文字
+func (c *ZhipuAIClient) ImageToWords(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
 	messages := []Message{}
 
 	// 添加系统提示词（如果提供）

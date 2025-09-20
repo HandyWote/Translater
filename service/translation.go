@@ -1,9 +1,9 @@
 package service
 
 import (
-	"fmt"
 	"Translater/ai"
 	"Translater/screenshot"
+	"fmt"
 )
 
 // TranslationService 翻译服务接口
@@ -38,7 +38,7 @@ func (s *TranslationServiceImpl) ProcessScreenshot(startX, startY, endX, endY in
 
 	// 使用ImageToWordsFromBytes函数提取文字
 	extractPrompt := "请提取这张图片中的所有文字内容，只返回文字，不要添加任何其他说明。"
-	extractResponse, err := s.AIClient.ImageToWordsFromBytes(extractPrompt, imageData, "image/png", "")
+	extractResponse, err := s.AIClient.ImageToWords(extractPrompt, imageData, "image/png", "")
 	if err != nil {
 		fmt.Printf("文字提取失败: %v\n", err)
 		return false

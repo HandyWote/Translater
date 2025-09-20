@@ -46,7 +46,14 @@ func (m *Manager) StartOnce() {
 	// 用于跟踪鼠标是否被按下
 	mousePressed := false
 
+	// 使用一个标志来控制循环退出
+	shouldExit := false
+
 	for ev := range evChan {
+		if shouldExit {
+			break
+		}
+		
 		switch ev.Kind {
 		case 7: // 鼠标按下
 			if ev.Button == hook.MouseMap["left"] {
@@ -67,12 +74,20 @@ func (m *Manager) StartOnce() {
 				
 				// 完成截图后退出本次监听
 				fmt.Println("截图完成，等待下次热键触发...")
-				return
+				shouldExit = true
+			}
+		case 4: //按下Esc键取消截图
+			if ev.Keycode == hook.Keycode["esc"] {
+				fmt.Println("截图已取消")
+				shouldExit = true
 			}
 		case 10: // 其他事件
 			// 忽略其他事件
 		}
 	}
+	
+	// 确保在退出前关闭事件监听
+	fmt.Println("截图监听已结束，等待下次热键触发...")
 }
 
 // Capture 截取指定区域的屏幕并保存
