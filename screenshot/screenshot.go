@@ -1,6 +1,7 @@
 package screenshot
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/png"
@@ -120,4 +121,33 @@ func saveImage(img image.Image, filename string) bool {
 
 	fmt.Printf("图片已保存: %s\n", filename)
 	return true
+}
+
+// CaptureToBytes 截取指定区域的屏幕并返回图像字节数据
+func CaptureToBytes(startX, startY, endX, endY int) ([]byte, error) {
+	// 确保坐标是正确的（左上到右下）
+	if startX > endX {
+		startX, endX = endX, startX
+	}
+	if startY > endY {
+		startY, endY = endY, startY
+	}
+
+	// 创建一个 Rectangle 对象
+	rect := image.Rect(startX, startY, endX, endY)
+
+	// 截图
+	img, err := screenshot.CaptureRect(rect)
+	if err != nil {
+		return nil, fmt.Errorf("截图失败: %v", err)
+	}
+
+	// 将图像编码为字节数据
+	var buf bytes.Buffer
+	err = png.Encode(&buf, img)
+	if err != nil {
+		return nil, fmt.Errorf("编码图像失败: %v", err)
+	}
+
+	return buf.Bytes(), nil
 }
