@@ -5,16 +5,37 @@ import (
 	"Translater/prompts"
 	"Translater/screenshot"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // TranslationService 翻译服务接口
 type TranslationService interface {
 	ProcessScreenshot(startX, startY, endX, endY int) bool
+	ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error)
+	TranslateText(input string) (*TextTranslationResult, error)
 }
 
 // TranslationServiceImpl 翻译服务实现
 type TranslationServiceImpl struct {
 	AIClient *ai.ZhipuAIClient
+}
+
+// ScreenshotTranslationResult 包含一次截图翻译的详情
+type ScreenshotTranslationResult struct {
+	ExtractedText   string
+	TranslatedText  string
+	ExtractPrompt   string
+	TranslatePrompt string
+	ProcessingTime  time.Duration
+}
+
+// TextTranslationResult 记录纯文本翻译的结果
+type TextTranslationResult struct {
+	OriginalText    string
+	TranslatedText  string
+	TranslatePrompt string
+	ProcessingTime  time.Duration
 }
 
 // NewTranslationService 创建新的翻译服务
@@ -28,54 +49,125 @@ func NewTranslationService(aiClient *ai.ZhipuAIClient) TranslationService {
 func (s *TranslationServiceImpl) ProcessScreenshot(startX, startY, endX, endY int) bool {
 	fmt.Println("开始处理截图...")
 
-	// 使用新的CaptureToBytes函数获取图像数据，不保存文件
-	imageData, err := screenshot.CaptureToBytes(startX, startY, endX, endY)
+	result, err := s.ProcessScreenshotDetailed(startX, startY, endX, endY)
 	if err != nil {
-		fmt.Printf("截图失败: %v\n", err)
+		fmt.Printf("截图处理失败: %v\n", err)
 		return false
 	}
 
-	fmt.Println("截图成功，开始提取文字...")
-
-	// 使用ImageToWordsFromBytes函数提取文字
-	extractResponse, err := s.AIClient.ImageToWords(prompts.ExtractPrompt, imageData, "image/png", "")
-	if err != nil {
-		fmt.Printf("文字提取失败: %v\n", err)
-		return false
-	}
-
-	// 获取提取的文字内容
-	extractedText := extractResponse.Choices[0].Message.Content
-	var textStr string
-	if str, ok := extractedText.(string); ok {
-		textStr = str
-	} else {
-		fmt.Printf("提取的文字内容格式错误: %v\n", extractedText)
-		return false
-	}
-
-	fmt.Printf("提取到的文字: %s\n", textStr)
-
-	// 如果提取到了文字，则进行翻译
-	if textStr != "" {
-		fmt.Println("开始翻译...")
-
-		// 使用Translate函数翻译成中文
-		translateResponse, err := s.AIClient.Translate(textStr, prompts.TranslatePrompt)
-		if err != nil {
-			fmt.Printf("翻译失败: %v\n", err)
-			return false
-		}
-
-		// 获取翻译结果
-		translatedText := translateResponse.Choices[0].Message.Content
-		fmt.Printf("翻译结果: %s\n", translatedText)
-
-		// 这里可以添加将翻译结果显示给用户的逻辑，比如弹出窗口或复制到剪贴板
+	fmt.Printf("提取到的文字: %s\n", result.ExtractedText)
+	if result.TranslatedText != "" {
+		fmt.Printf("翻译结果: %s\n", result.TranslatedText)
 		fmt.Println("处理完成！")
 	} else {
 		fmt.Println("未提取到文字内容")
 	}
 
 	return true
+}
+
+// ProcessScreenshotDetailed 执行截图、OCR、翻译并返回完整结果
+func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error) {
+	if s.AIClient == nil {
+		return nil, fmt.Errorf("AI client 未初始化")
+	}
+
+	started := time.Now()
+
+	imageData, err := screenshot.CaptureToBytes(startX, startY, endX, endY)
+	if err != nil {
+		return nil, fmt.Errorf("截图失败: %w", err)
+	}
+
+	// OCR 阶段
+	extractResponse, err := s.AIClient.ImageToWords(prompts.ExtractPrompt, imageData, "image/png", "")
+	if err != nil {
+		return nil, fmt.Errorf("文字提取失败: %w", err)
+	}
+
+	if len(extractResponse.Choices) == 0 {
+		return nil, fmt.Errorf("文字提取结果为空")
+	}
+
+	extractedText, err := messageContentToString(extractResponse.Choices[0].Message.Content)
+	if err != nil {
+		return nil, fmt.Errorf("提取内容解析失败: %w", err)
+	}
+
+	result := &ScreenshotTranslationResult{
+		ExtractedText:   extractedText,
+		ExtractPrompt:   prompts.ExtractPrompt,
+		TranslatePrompt: prompts.TranslatePrompt,
+	}
+
+	if strings.TrimSpace(extractedText) == "" {
+		result.ProcessingTime = time.Since(started)
+		return result, nil
+	}
+
+	// 翻译阶段
+	translateResponse, err := s.AIClient.Translate(extractedText, prompts.TranslatePrompt)
+	if err != nil {
+		return nil, fmt.Errorf("翻译失败: %w", err)
+	}
+
+	if len(translateResponse.Choices) == 0 {
+		return nil, fmt.Errorf("翻译结果为空")
+	}
+
+	translatedText, err := messageContentToString(translateResponse.Choices[0].Message.Content)
+	if err != nil {
+		return nil, fmt.Errorf("翻译内容解析失败: %w", err)
+	}
+
+	result.TranslatedText = translatedText
+	result.ProcessingTime = time.Since(started)
+
+	return result, nil
+}
+
+// TranslateText 翻译纯文本
+func (s *TranslationServiceImpl) TranslateText(input string) (*TextTranslationResult, error) {
+	if s.AIClient == nil {
+		return nil, fmt.Errorf("AI client 未初始化")
+	}
+
+	if strings.TrimSpace(input) == "" {
+		return nil, fmt.Errorf("翻译内容不能为空")
+	}
+
+	started := time.Now()
+	translateResponse, err := s.AIClient.Translate(input, prompts.TranslatePrompt)
+	if err != nil {
+		return nil, fmt.Errorf("翻译失败: %w", err)
+	}
+
+	if len(translateResponse.Choices) == 0 {
+		return nil, fmt.Errorf("翻译结果为空")
+	}
+
+	translatedText, err := messageContentToString(translateResponse.Choices[0].Message.Content)
+	if err != nil {
+		return nil, fmt.Errorf("翻译内容解析失败: %w", err)
+	}
+
+	return &TextTranslationResult{
+		OriginalText:    input,
+		TranslatedText:  translatedText,
+		TranslatePrompt: prompts.TranslatePrompt,
+		ProcessingTime:  time.Since(started),
+	}, nil
+}
+
+func messageContentToString(content interface{}) (string, error) {
+	switch value := content.(type) {
+	case string:
+		return value, nil
+	case []byte:
+		return string(value), nil
+	case fmt.Stringer:
+		return value.String(), nil
+	default:
+		return "", fmt.Errorf("不支持的消息内容类型: %T", content)
+	}
 }
