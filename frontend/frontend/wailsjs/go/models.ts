@@ -7,6 +7,7 @@ export namespace main {
 	    keepWindowOnTop: boolean;
 	    theme: string;
 	    showToastOnComplete: boolean;
+	    hotkeyCombination: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SettingsDTO(source);
@@ -20,6 +21,7 @@ export namespace main {
 	        this.keepWindowOnTop = source["keepWindowOnTop"];
 	        this.theme = source["theme"];
 	        this.showToastOnComplete = source["showToastOnComplete"];
+	        this.hotkeyCombination = source["hotkeyCombination"];
 	    }
 	}
 	export class UITranslationResult {

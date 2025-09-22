@@ -22,6 +22,7 @@ export interface SettingsState {
 	keepWindowOnTop: boolean;
 	theme: string;
 	showToastOnComplete: boolean;
+	hotkeyCombination: string;
 }
 
 export function defaultSettingsState(): SettingsState {
@@ -32,6 +33,7 @@ export function defaultSettingsState(): SettingsState {
 		keepWindowOnTop: false,
 		theme: 'system',
 		showToastOnComplete: true,
+		hotkeyCombination: 'Alt+T',
 	};
 }
 
@@ -56,6 +58,7 @@ export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 		keepWindowOnTop: Boolean(converted.keepWindowOnTop),
 		theme: converted.theme || 'system',
 		showToastOnComplete: Boolean(converted.showToastOnComplete),
+		hotkeyCombination: converted.hotkeyCombination || 'Alt+T',
 	};
 }
 
@@ -67,6 +70,7 @@ export function toSettingsPayload(state: SettingsState): main.SettingsDTO {
 		keepWindowOnTop: state.keepWindowOnTop,
 		theme: state.theme,
 		showToastOnComplete: state.showToastOnComplete,
+		hotkeyCombination: state.hotkeyCombination,
 	});
 }
 
@@ -87,4 +91,3 @@ export function formatDuration(durationMs: number): string {
 	}
 	return `${(durationMs / 1000).toFixed(1)} s`;
 }
-

@@ -9,6 +9,7 @@ import (
 
 	"Translater/ai"
 	"Translater/config"
+	"Translater/hotkey"
 	"Translater/screenshot"
 	"Translater/service"
 
@@ -35,16 +36,22 @@ type App struct {
 	settingsManager *config.SettingsManager
 	settings        config.Settings
 
-	translationSvc   service.TranslationService
-	screenshotMgr    *screenshot.Manager
-	currentAPIKey    string
-	screenshotLocker sync.Mutex
-	screenshotActive bool
+	translationSvc     service.TranslationService
+	screenshotMgr      *screenshot.Manager
+	currentAPIKey      string
+	screenshotLocker   sync.Mutex
+	screenshotActive   bool
+	hotkeyMgr          *hotkey.Manager
+	hotkeyMutex        sync.Mutex
+	hotkeyLoopOnce     sync.Once
+	hotkeyRegistered   bool
+	hotkeyID           uintptr
+	currentHotkeyCombo string
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{hotkeyID: 1}
 }
 
 // startup is called when the app starts. The context is saved
@@ -202,6 +209,7 @@ type SettingsDTO struct {
 	KeepWindowOnTop     bool   `json:"keepWindowOnTop"`
 	Theme               string `json:"theme"`
 	ShowToastOnComplete bool   `json:"showToastOnComplete"`
+	HotkeyCombination   string `json:"hotkeyCombination"`
 }
 
 func (a *App) initSettings() error {
@@ -228,6 +236,7 @@ func (a *App) ensureService() error {
 
 	apiKey, err := a.resolveAPIKey()
 	if err != nil {
+		a.disableHotkey()
 		return err
 	}
 
@@ -244,7 +253,82 @@ func (a *App) ensureService() error {
 		a.screenshotMgr.SetCaptureHandler(a.handleScreenshotCapture)
 	}
 
+	if err := a.ensureHotkeyListener(); err != nil {
+		a.logError(fmt.Sprintf("热键初始化失败: %v", err))
+	}
+
 	return nil
+}
+
+func (a *App) ensureHotkeyListener() error {
+	combo := strings.TrimSpace(a.settings.HotkeyCombination)
+	if combo == "" {
+		combo = config.DefaultSettings().HotkeyCombination
+	}
+
+	modifiers, key, err := hotkey.ParseCombination(combo)
+	if err != nil {
+		a.disableHotkey()
+		return err
+	}
+
+	canonical := hotkey.FormatCombination(modifiers, key)
+
+	a.hotkeyMutex.Lock()
+	defer a.hotkeyMutex.Unlock()
+
+	if a.hotkeyMgr == nil {
+		a.hotkeyMgr = hotkey.NewManager()
+		if a.hotkeyID == 0 {
+			a.hotkeyID = 1
+		}
+	}
+
+	if a.hotkeyRegistered {
+		if strings.EqualFold(a.currentHotkeyCombo, canonical) {
+			return nil
+		}
+		a.hotkeyMgr.Unregister(a.hotkeyID)
+		a.hotkeyRegistered = false
+	}
+
+	if err := a.hotkeyMgr.Register(a.hotkeyID, modifiers, key, func() {
+		go a.handleHotkeyTrigger()
+	}); err != nil {
+		return err
+	}
+
+	a.hotkeyRegistered = true
+	a.currentHotkeyCombo = canonical
+	a.hotkeyLoopOnce.Do(func() {
+		go a.hotkeyMgr.Start()
+	})
+
+	return nil
+}
+
+func (a *App) disableHotkey() {
+	a.hotkeyMutex.Lock()
+	defer a.hotkeyMutex.Unlock()
+
+	if a.hotkeyMgr != nil && a.hotkeyRegistered {
+		a.hotkeyMgr.Unregister(a.hotkeyID)
+		a.hotkeyRegistered = false
+	}
+	a.currentHotkeyCombo = ""
+}
+
+func (a *App) handleHotkeyTrigger() {
+	a.screenshotLocker.Lock()
+	if a.screenshotActive {
+		a.screenshotLocker.Unlock()
+		return
+	}
+	a.screenshotLocker.Unlock()
+
+	if err := a.StartScreenshotTranslation(); err != nil {
+		a.logError(fmt.Sprintf("热键触发截图失败: %v", err))
+	}
 }
 
 func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
@@ -348,6 +432,7 @@ func fromConfigSettings(settings config.Settings) SettingsDTO {
 		KeepWindowOnTop:     settings.KeepWindowOnTop,
 		Theme:               settings.Theme,
 		ShowToastOnComplete: settings.ShowToastOnComplete,
+		HotkeyCombination:   settings.HotkeyCombination,
 	}
 }
 
@@ -363,5 +448,15 @@ func toConfigSettings(dto SettingsDTO) config.Settings {
 		settings.Theme = dto.Theme
 	}
 	settings.ShowToastOnComplete = dto.ShowToastOnComplete
+	combo := strings.TrimSpace(dto.HotkeyCombination)
+	if combo == "" {
+		settings.HotkeyCombination = config.DefaultSettings().HotkeyCombination
+	} else {
+		if normalized, err := hotkey.NormalizeCombination(combo); err == nil {
+			settings.HotkeyCombination = normalized
+		} else {
+			settings.HotkeyCombination = config.DefaultSettings().HotkeyCombination
+		}
+	}
 	return settings
 }

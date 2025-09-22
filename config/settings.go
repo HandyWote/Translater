@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -16,6 +17,7 @@ type Settings struct {
 	KeepWindowOnTop     bool   `json:"keepWindowOnTop"`
 	Theme               string `json:"theme"`
 	ShowToastOnComplete bool   `json:"showToastOnComplete"`
+	HotkeyCombination   string `json:"hotkeyCombination"`
 }
 
 // DefaultSettings 返回默认配置
@@ -26,6 +28,7 @@ func DefaultSettings() Settings {
 		KeepWindowOnTop:     false,
 		Theme:               "system",
 		ShowToastOnComplete: true,
+		HotkeyCombination:   "Alt+T",
 	}
 }
 
@@ -108,5 +111,8 @@ func applySettingsDefaults(settings *Settings) {
 	}
 	if settings.Theme == "" {
 		settings.Theme = defaults.Theme
+	}
+	if strings.TrimSpace(settings.HotkeyCombination) == "" {
+		settings.HotkeyCombination = defaults.HotkeyCombination
 	}
 }

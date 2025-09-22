@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+
 	"Translater/ai"
 	"Translater/config"
 	"Translater/hotkey"
@@ -41,11 +42,13 @@ func main() {
 	})
 
 	// 注册热键，当触发时启动截图
-	hotkeyManager.Register(1, hotkey.MOD_ALT, hotkey.VK_T, func() {
+	if err := hotkeyManager.Register(1, hotkey.MOD_ALT, hotkey.VK_T, func() {
 		fmt.Println("热键触发，启动截图...")
 		// 在新的 goroutine 中启动截图，避免阻塞热键监听
 		go screenshotManager.StartOnce()
-	})
+	}); err != nil {
+		log.Fatalf("注册热键失败: %v", err)
+	}
 
 	// 启动热键监听
 	hotkeyManager.Start()

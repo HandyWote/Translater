@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {reactive, watch} from 'vue';
+import {computed, reactive, ref, watch} from 'vue';
 import type {SettingsState} from '../types';
 
 const props = defineProps<{
@@ -13,6 +13,53 @@ const emit = defineEmits<{
 
 const form = reactive<SettingsState>({...props.settings});
 
+const DEFAULT_HOTKEY = 'Alt+T';
+const DEFAULT_HOTKEY_MODIFIER = 'Alt';
+const DEFAULT_HOTKEY_KEY = 'T';
+
+const modifierOptions = [
+	{label: '无修饰 (不推荐)', value: ''},
+	{label: 'Alt', value: 'Alt'},
+	{label: 'Ctrl', value: 'Ctrl'},
+	{label: 'Shift', value: 'Shift'},
+	{label: 'Ctrl + Alt', value: 'Ctrl+Alt'},
+	{label: 'Ctrl + Shift', value: 'Ctrl+Shift'},
+	{label: 'Alt + Shift', value: 'Alt+Shift'},
+	{label: 'Ctrl + Alt + Shift', value: 'Ctrl+Alt+Shift'},
+];
+
+const modifierValues = new Set(modifierOptions.map((item) => item.value));
+
+const functionKeyOptions = Array.from({length: 12}, (_, index) => {
+	const value = `F${index + 1}`;
+	return {label: value, value};
+});
+
+const keyOptions = [
+	...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((char) => ({label: char, value: char})),
+	...functionKeyOptions,
+];
+
+const keyValues = new Set(keyOptions.map((item) => item.value));
+
+const hotkeyModifiers = ref('');
+const hotkeyKey = ref(DEFAULT_HOTKEY_KEY);
+
+let syncingSelectors = false;
+let syncingCombination = false;
+
+function applyHotkeyToSelectors(combo: string) {
+	const safeCombo = combo && combo.trim() ? combo : DEFAULT_HOTKEY;
+	const parts = safeCombo
+		.split('+')
+		.map((part) => part.trim())
+		.filter(Boolean);
+	const key = parts.pop() ?? DEFAULT_HOTKEY_KEY;
+	const modifier = parts.join('+');
+	hotkeyModifiers.value = modifierValues.has(modifier) ? modifier : DEFAULT_HOTKEY_MODIFIER;
+	hotkeyKey.value = keyValues.has(key) ? key : DEFAULT_HOTKEY_KEY;
+}
+
 watch(
 	() => props.settings,
 	(next) => {
@@ -20,6 +67,47 @@ watch(
 	},
 	{deep: true},
 );
+
+watch(
+	() => form.hotkeyCombination,
+	(combo) => {
+		if (syncingCombination) {
+			return;
+		}
+		syncingSelectors = true;
+		applyHotkeyToSelectors(combo ?? '');
+		syncingSelectors = false;
+	},
+	{immediate: true},
+);
+
+watch(
+	[hotkeyModifiers, hotkeyKey],
+	([modifier, key]) => {
+		if (syncingSelectors) {
+			return;
+		}
+		const segments: string[] = [];
+		if (modifier) {
+			segments.push(modifier);
+		}
+		if (key) {
+			segments.push(key);
+		}
+		const nextValue = segments.join('+');
+		if (nextValue === form.hotkeyCombination) {
+			return;
+		}
+		syncingCombination = true;
+		form.hotkeyCombination = nextValue;
+		syncingCombination = false;
+	},
+);
+
+const hotkeyPreview = computed(() => {
+	const value = form.hotkeyCombination?.trim();
+	return value ? value : DEFAULT_HOTKEY;
+});
 
 function handleSubmit(event: Event) {
 	event.preventDefault();
@@ -88,6 +176,32 @@ const themeOptions = [
 						<span>翻译完成时弹出底部提醒。</span>
 					</div>
 				</label>
+			</div>
+		</section>
+
+		<section class="card">
+			<header>
+				<h2>全局热键</h2>
+				<p>选择用于启动截图翻译的键位组合，保存后自动启用。</p>
+			</header>
+			<div class="grid hotkey-grid">
+				<label class="field">
+					<span>修饰键</span>
+					<select v-model="hotkeyModifiers">
+						<option v-for="option in modifierOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+					</select>
+				</label>
+				<label class="field">
+					<span>主键</span>
+					<select v-model="hotkeyKey">
+						<option v-for="option in keyOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+					</select>
+				</label>
+			</div>
+			<div class="hotkey-preview">
+				<span class="hotkey-preview__label">当前组合</span>
+				<strong class="hotkey-preview__value">{{ hotkeyPreview }}</strong>
+				<small>确保与其他软件热键不冲突，保存设置后立即生效。</small>
 			</div>
 		</section>
 
@@ -178,6 +292,39 @@ small {
 	display: grid;
 	gap: 1rem;
 	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.hotkey-grid {
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.hotkey-preview {
+	margin-top: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+	padding: 0.85rem 1rem;
+	border-radius: 14px;
+	border: 1px dashed var(--border-subtle);
+	background: var(--surface-hover);
+}
+
+.hotkey-preview__label {
+	font-size: 0.78rem;
+	color: var(--color-text-tertiary);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.hotkey-preview__value {
+	font-size: 1.2rem;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+}
+
+.hotkey-preview small {
+	font-size: 0.75rem;
+	color: var(--color-text-tertiary);
 }
 
 .toggle {
