@@ -471,12 +471,6 @@ func (a *App) showWindow() {
 	runtime.WindowShow(a.ctx)
 }
 
-func (a *App) hideWindow() {
-	if a.ctx == nil {
-		return
-	}
-	runtime.WindowHide(a.ctx)
-}
 
 func (a *App) quitApplication() {
 	a.teardownSystemTray()
