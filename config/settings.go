@@ -14,7 +14,6 @@ import (
 // Settings 保存桌面端可配置项
 type Settings struct {
 	APIKeyOverride      string `json:"apiKeyOverride"`
-	TargetLanguage      string `json:"targetLanguage"`
 	AutoCopyResult      bool   `json:"autoCopyResult"`
 	KeepWindowOnTop     bool   `json:"keepWindowOnTop"`
 	Theme               string `json:"theme"`
@@ -27,7 +26,6 @@ type Settings struct {
 // DefaultSettings 返回默认配置
 func DefaultSettings() Settings {
 	return Settings{
-		TargetLanguage:      "zh-CN",
 		AutoCopyResult:      true,
 		KeepWindowOnTop:     false,
 		Theme:               "system",
@@ -111,10 +109,6 @@ func resolveSettingsPath(appName string) (string, error) {
 
 func applySettingsDefaults(settings *Settings) {
 	defaults := DefaultSettings()
-
-	if settings.TargetLanguage == "" {
-		settings.TargetLanguage = defaults.TargetLanguage
-	}
 	if settings.Theme == "" {
 		settings.Theme = defaults.Theme
 	}

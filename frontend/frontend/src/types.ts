@@ -17,7 +17,6 @@ export interface StatusMessage {
 
 export interface SettingsState {
 	apiKeyOverride: string;
-	targetLanguage: string;
 	autoCopyResult: boolean;
 	keepWindowOnTop: boolean;
 	theme: string;
@@ -30,7 +29,6 @@ export interface SettingsState {
 export function defaultSettingsState(): SettingsState {
 	return {
 		apiKeyOverride: '',
-		targetLanguage: 'zh-CN',
 		autoCopyResult: true,
 		keepWindowOnTop: false,
 		theme: 'system',
@@ -58,7 +56,6 @@ export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 	const defaults = defaultSettingsState();
 	return {
 		apiKeyOverride: converted.apiKeyOverride ?? '',
-		targetLanguage: converted.targetLanguage || defaults.targetLanguage,
 		autoCopyResult: Boolean(converted.autoCopyResult),
 		keepWindowOnTop: Boolean(converted.keepWindowOnTop),
 		theme: converted.theme || defaults.theme,
@@ -72,7 +69,6 @@ export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 export function toSettingsPayload(state: SettingsState): main.SettingsDTO {
 	return main.SettingsDTO.createFrom({
 		apiKeyOverride: state.apiKeyOverride,
-		targetLanguage: state.targetLanguage,
 		autoCopyResult: state.autoCopyResult,
 		keepWindowOnTop: state.keepWindowOnTop,
 		theme: state.theme,

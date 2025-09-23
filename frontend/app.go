@@ -205,7 +205,6 @@ type UITranslationResult struct {
 // SettingsDTO 前端-后端交互的配置载体
 type SettingsDTO struct {
 	APIKeyOverride      string `json:"apiKeyOverride"`
-	TargetLanguage      string `json:"targetLanguage"`
 	AutoCopyResult      bool   `json:"autoCopyResult"`
 	KeepWindowOnTop     bool   `json:"keepWindowOnTop"`
 	Theme               string `json:"theme"`
@@ -463,7 +462,6 @@ func (a *App) logError(message string) {
 func fromConfigSettings(settings config.Settings) SettingsDTO {
 	return SettingsDTO{
 		APIKeyOverride:      settings.APIKeyOverride,
-		TargetLanguage:      settings.TargetLanguage,
 		AutoCopyResult:      settings.AutoCopyResult,
 		KeepWindowOnTop:     settings.KeepWindowOnTop,
 		Theme:               settings.Theme,
@@ -477,9 +475,6 @@ func fromConfigSettings(settings config.Settings) SettingsDTO {
 func toConfigSettings(dto SettingsDTO) config.Settings {
 	settings := config.DefaultSettings()
 	settings.APIKeyOverride = strings.TrimSpace(dto.APIKeyOverride)
-	if strings.TrimSpace(dto.TargetLanguage) != "" {
-		settings.TargetLanguage = dto.TargetLanguage
-	}
 	settings.AutoCopyResult = dto.AutoCopyResult
 	settings.KeepWindowOnTop = dto.KeepWindowOnTop
 	if strings.TrimSpace(dto.Theme) != "" {

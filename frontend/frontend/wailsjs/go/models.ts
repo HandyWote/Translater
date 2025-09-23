@@ -2,7 +2,6 @@ export namespace main {
 	
 	export class SettingsDTO {
 	    apiKeyOverride: string;
-	    targetLanguage: string;
 	    autoCopyResult: boolean;
 	    keepWindowOnTop: boolean;
 	    theme: string;
@@ -18,7 +17,6 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.apiKeyOverride = source["apiKeyOverride"];
-	        this.targetLanguage = source["targetLanguage"];
 	        this.autoCopyResult = source["autoCopyResult"];
 	        this.keepWindowOnTop = source["keepWindowOnTop"];
 	        this.theme = source["theme"];

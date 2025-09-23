@@ -121,14 +121,6 @@ function resetPrompts() {
 	form.translatePrompt = defaults.translatePrompt;
 }
 
-const languageOptions = [
-	{label: '中文 (简体)', value: 'zh-CN'},
-	{label: '中文 (繁体)', value: 'zh-TW'},
-	{label: 'English', value: 'en-US'},
-	{label: '日本語', value: 'ja-JP'},
-	{label: '한국어', value: 'ko-KR'},
-];
-
 const themeOptions = [
 	{label: '跟随系统', value: 'system'},
 	{label: '浅色', value: 'light'},
@@ -144,7 +136,7 @@ const themeOptions = [
 				<p>{{ props.apiKeyMissing ? '未检测到 API Key，请输入有效凭证。' : '已配置 API Key，可直接使用截图和翻译功能。' }}</p>
 			</header>
 			<label class="field">
-				<span>智谱 API Key</span>
+				<span>API Key</span>
 				<input v-model="form.apiKeyOverride" type="password" placeholder="sk-xxxxxxxx" autocomplete="off"/>
 				<small>保存后立即生效，仅保存在本机用户配置目录。</small>
 			</label>
@@ -153,15 +145,9 @@ const themeOptions = [
 		<section class="card">
 			<header>
 				<h2>翻译行为</h2>
-				<p>控制翻译语言、复制等自动化行为。</p>
+				<p>控制复制、前置等自动化行为。</p>
 			</header>
 			<div class="behavior-list">
-				<label class="field">
-					<span>目标语言</span>
-					<select v-model="form.targetLanguage">
-						<option v-for="option in languageOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-					</select>
-				</label>
 				<label class="toggle">
 					<input v-model="form.autoCopyResult" type="checkbox"/>
 					<div>
@@ -189,7 +175,7 @@ const themeOptions = [
 		<section class="card">
 			<header>
 				<h2>提示词管理</h2>
-				<p>自定义 OCR 与翻译阶段的提示词，适配不同语境。</p>
+				<p>自定义文字识别与翻译阶段的提示词，适配不同语境。</p>
 			</header>
 			<label class="field">
 				<span>文字提取提示词</span>
