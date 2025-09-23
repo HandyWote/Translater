@@ -27,6 +27,7 @@ var (
 	gdi32                          = syscall.NewLazyDLL("gdi32.dll")
 	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
 	procCreateSolidBrush           = gdi32.NewProc("CreateSolidBrush")
+	procFillRect                   = user32.NewProc("FillRect")
 )
 
 // Manager coordinates overlay window lifecycle on Windows.
@@ -81,6 +82,11 @@ type overlayWindow struct {
 	hwnd   win.HWND
 	ready  chan error
 	closed chan struct{}
+
+	font           win.HFONT
+	fontRectWidth  int32
+	fontRectHeight int32
+	fontPointSize  int
 }
 
 func newOverlayWindow(text string, rect Rect) (*overlayWindow, error) {
@@ -215,6 +221,7 @@ func overlayWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 		ow.onPaint(hwnd)
 		return 0
 	case win.WM_DESTROY:
+		ow.cleanup()
 		win.PostQuitMessage(0)
 		return 0
 	case win.WM_ERASEBKGND:
@@ -256,6 +263,12 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 	win.SetBkMode(hdc, win.TRANSPARENT)
 	win.SetTextColor(hdc, win.RGB(240, 247, 255))
 	if len(ow.textUTF16) > 0 {
+		font := ow.ensureFittingFont(hdc, &inner)
+		var previous win.HGDIOBJ
+		if font != 0 {
+			previous = win.SelectObject(hdc, win.HGDIOBJ(font))
+			defer win.SelectObject(hdc, previous)
+		}
 		win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &inner, win.DT_LEFT|win.DT_WORDBREAK|win.DT_NOPREFIX, nil)
 	}
 }
@@ -268,7 +281,7 @@ func rectSafeDimension(value int) int {
 }
 
 func fillRect(hdc win.HDC, rect *win.RECT, brush win.HBRUSH) {
-	user32.NewProc("FillRect").Call(
+	procFillRect.Call(
 		uintptr(hdc),
 		uintptr(unsafe.Pointer(rect)),
 		uintptr(brush),
@@ -300,4 +313,123 @@ func createSolidBrush(color win.COLORREF) (win.HBRUSH, error) {
 		return 0, err
 	}
 	return win.HBRUSH(r1), nil
+}
+
+func (ow *overlayWindow) ensureFittingFont(hdc win.HDC, target *win.RECT) win.HFONT {
+	availableWidth := target.Right - target.Left
+	availableHeight := target.Bottom - target.Top
+	if availableWidth <= 0 || availableHeight <= 0 {
+		return 0
+	}
+
+	if len(ow.textUTF16) == 0 {
+		return 0
+	}
+
+	if ow.font != 0 && ow.fontRectWidth == availableWidth && ow.fontRectHeight == availableHeight {
+		return ow.font
+	}
+
+	if ow.font != 0 {
+		win.DeleteObject(win.HGDIOBJ(ow.font))
+		ow.font = 0
+	}
+
+	logPixelsY := win.GetDeviceCaps(hdc, win.LOGPIXELSY)
+	if logPixelsY <= 0 {
+		logPixelsY = 96
+	}
+
+	minPoint := 8
+	maxPoint := maxInt(minPoint, int(availableHeight)*72/int(logPixelsY))
+	if maxPoint > 400 {
+		maxPoint = 400
+	}
+
+	var (
+		bestFont win.HFONT
+		bestSize int
+	)
+
+	for minPoint <= maxPoint {
+		mid := (minPoint + maxPoint) / 2
+		font := createFontForPoint(logPixelsY, mid)
+		if font == 0 {
+			break
+		}
+		if ow.textFits(hdc, font, int(availableWidth), int(availableHeight)) {
+			if bestFont != 0 {
+				win.DeleteObject(win.HGDIOBJ(bestFont))
+			}
+			bestFont = font
+			bestSize = mid
+			minPoint = mid + 1
+		} else {
+			win.DeleteObject(win.HGDIOBJ(font))
+			maxPoint = mid - 1
+		}
+	}
+
+	if bestFont == 0 {
+		bestFont = createFontForPoint(logPixelsY, minPoint)
+		bestSize = minPoint
+	}
+
+	ow.font = bestFont
+	ow.fontRectWidth = availableWidth
+	ow.fontRectHeight = availableHeight
+	ow.fontPointSize = bestSize
+	return ow.font
+}
+
+func (ow *overlayWindow) textFits(hdc win.HDC, font win.HFONT, width, height int) bool {
+	prev := win.SelectObject(hdc, win.HGDIOBJ(font))
+	defer win.SelectObject(hdc, prev)
+
+	calcRect := win.RECT{Left: 0, Top: 0, Right: int32(width), Bottom: 0}
+	flags := uint32(win.DT_LEFT | win.DT_WORDBREAK | win.DT_NOPREFIX | win.DT_CALCRECT)
+	win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &calcRect, flags, nil)
+	requiredWidth := calcRect.Right - calcRect.Left
+	requiredHeight := calcRect.Bottom - calcRect.Top
+	return int(requiredWidth) <= width && int(requiredHeight) <= height
+}
+
+func createFontForPoint(logPixelsY int32, pointSize int) win.HFONT {
+	if pointSize < 1 {
+		pointSize = 1
+	}
+
+	height := -int32(pointSize * int(logPixelsY) / 72)
+	if height == 0 {
+		height = -1
+	}
+
+	var lf win.LOGFONT
+	lf.LfHeight = height
+	lf.LfWeight = win.FW_NORMAL
+	lf.LfCharSet = win.DEFAULT_CHARSET
+	lf.LfOutPrecision = win.OUT_DEFAULT_PRECIS
+	lf.LfClipPrecision = win.CLIP_DEFAULT_PRECIS
+	lf.LfQuality = win.CLEARTYPE_QUALITY
+	lf.LfPitchAndFamily = win.DEFAULT_PITCH | win.FF_DONTCARE
+	face := syscall.StringToUTF16("Microsoft YaHei")
+	copy(lf.LfFaceName[:], face)
+
+	return win.CreateFontIndirect(&lf)
+}
+
+func (ow *overlayWindow) cleanup() {
+	if ow.font != 0 {
+		win.DeleteObject(win.HGDIOBJ(ow.font))
+		ow.font = 0
+	}
+	ow.fontRectWidth = 0
+	ow.fontRectHeight = 0
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
