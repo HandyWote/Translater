@@ -3,6 +3,7 @@
 package main
 
 import (
+	"runtime"
 	"sync"
 
 	"github.com/getlantern/systray"
@@ -16,37 +17,39 @@ var (
 
 func (a *App) initSystemTray() {
 	systrayOnce.Do(func() {
-		go systray.Run(func() {
-			systrayStartedMux.Lock()
-			systrayStarted = true
-			systrayStartedMux.Unlock()
+		go func() {
+			runtime.LockOSThread() // systray menus only work reliably when pinned to a single OS thread
+			defer runtime.UnlockOSThread()
 
-			systray.SetIcon(trayIcon)
-			systray.SetTooltip("沉浸翻译")
+			systray.Run(func() {
+				systrayStartedMux.Lock()
+				systrayStarted = true
+				systrayStartedMux.Unlock()
 
-			showItem := systray.AddMenuItem("显示主窗口", "显示主窗口")
-			hideItem := systray.AddMenuItem("隐藏主窗口", "隐藏主窗口")
-			systray.AddSeparator()
-			quitItem := systray.AddMenuItem("退出应用", "退出应用")
+				systray.SetIcon(trayIcon)
+				systray.SetTooltip("沉浸翻译")
 
-			go func() {
-				for {
-					select {
-					case <-showItem.ClickedCh:
-						a.showWindow()
-					case <-hideItem.ClickedCh:
-						a.hideWindow()
-					case <-quitItem.ClickedCh:
-						a.quitApplication()
-						return
+				showItem := systray.AddMenuItem("显示主窗口", "显示主窗口")
+				systray.AddSeparator()
+				quitItem := systray.AddMenuItem("退出应用", "退出应用")
+
+				go func() {
+					for {
+						select {
+						case <-showItem.ClickedCh:
+							a.showWindow()
+						case <-quitItem.ClickedCh:
+							a.quitApplication()
+							return
+						}
 					}
-				}
-			}()
-		}, func() {
-			systrayStartedMux.Lock()
-			systrayStarted = false
-			systrayStartedMux.Unlock()
-		})
+				}()
+			}, func() {
+				systrayStartedMux.Lock()
+				systrayStarted = false
+				systrayStartedMux.Unlock()
+			})
+		}()
 	})
 }
 
