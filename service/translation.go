@@ -31,6 +31,19 @@ type ScreenshotTranslationResult struct {
 	ExtractPrompt   string
 	TranslatePrompt string
 	ProcessingTime  time.Duration
+	Bounds          ScreenshotBounds
+}
+
+// ScreenshotBounds 描述一次截图对应的屏幕区域
+type ScreenshotBounds struct {
+	StartX int `json:"startX"`
+	StartY int `json:"startY"`
+	EndX   int `json:"endX"`
+	EndY   int `json:"endY"`
+	Left   int `json:"left"`
+	Top    int `json:"top"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 // TextTranslationResult 记录纯文本翻译的结果
@@ -56,6 +69,38 @@ func normalisePrompt(value string, fallback string) string {
 		return trimmed
 	}
 	return fallback
+}
+
+func newScreenshotBounds(startX, startY, endX, endY int) ScreenshotBounds {
+	left := startX
+	right := endX
+	if left > right {
+		left, right = right, left
+	}
+	top := startY
+	bottom := endY
+	if top > bottom {
+		top, bottom = bottom, top
+	}
+	width := right - left
+	height := bottom - top
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
+
+	return ScreenshotBounds{
+		StartX: startX,
+		StartY: startY,
+		EndX:   endX,
+		EndY:   endY,
+		Left:   left,
+		Top:    top,
+		Width:  width,
+		Height: height,
+	}
 }
 
 // ProcessScreenshot 处理截图：截图->提取文字->翻译
@@ -86,6 +131,7 @@ func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX,
 	}
 
 	started := time.Now()
+	bounds := newScreenshotBounds(startX, startY, endX, endY)
 
 	imageData, err := screenshot.CaptureToBytes(startX, startY, endX, endY)
 	if err != nil {
@@ -111,6 +157,7 @@ func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX,
 		ExtractedText:   extractedText,
 		ExtractPrompt:   s.extractPrompt,
 		TranslatePrompt: s.translatePrompt,
+		Bounds:          bounds,
 	}
 
 	if strings.TrimSpace(extractedText) == "" {

@@ -2,12 +2,24 @@ import {main} from '../wailsjs/go/models';
 
 export type TranslationSource = 'manual' | 'screenshot';
 
+export interface ScreenshotBounds {
+	startX: number;
+	startY: number;
+	endX: number;
+	endY: number;
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}
+
 export interface TranslationResult {
 	originalText: string;
 	translatedText: string;
 	source: TranslationSource;
 	timestamp: string;
 	durationMs: number;
+	bounds?: ScreenshotBounds;
 }
 
 export interface StatusMessage {
@@ -42,12 +54,26 @@ export function defaultSettingsState(): SettingsState {
 export function mapTranslationResult(data: main.UITranslationResult | any): TranslationResult {
 	const converted = data instanceof main.UITranslationResult ? data : main.UITranslationResult.createFrom(data);
 	const timestamp = converted.timestamp instanceof Date ? converted.timestamp : new Date(converted.timestamp ?? Date.now());
+	const rawBounds: any = (converted as any).bounds;
+	const bounds = rawBounds
+		? {
+			startX: Number(rawBounds.startX) || 0,
+			startY: Number(rawBounds.startY) || 0,
+			endX: Number(rawBounds.endX) || 0,
+			endY: Number(rawBounds.endY) || 0,
+			left: Number(rawBounds.left) || 0,
+			top: Number(rawBounds.top) || 0,
+			width: Number(rawBounds.width) || 1,
+			height: Number(rawBounds.height) || 1,
+		}
+		: undefined;
 	return {
 		originalText: converted.originalText ?? '',
 		translatedText: converted.translatedText ?? '',
 		source: (converted.source as TranslationSource) ?? 'manual',
 		timestamp: timestamp.toISOString(),
 		durationMs: Number.isFinite(converted.durationMs) ? converted.durationMs : 0,
+		bounds,
 	};
 }
 

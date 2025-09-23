@@ -12,6 +12,7 @@ import (
 	"Translater/hotkey"
 	"Translater/screenshot"
 	"Translater/service"
+	"Translater/ui/overlay"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -47,11 +48,15 @@ type App struct {
 	hotkeyRegistered   bool
 	hotkeyID           uintptr
 	currentHotkeyCombo string
+	overlayMgr         *overlay.Manager
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{hotkeyID: 1}
+	return &App{
+		hotkeyID:   1,
+		overlayMgr: overlay.NewManager(),
+	}
 }
 
 // startup is called when the app starts. The context is saved
@@ -89,6 +94,10 @@ func (a *App) StartScreenshotTranslation() error {
 	}
 	a.screenshotActive = true
 	a.screenshotLocker.Unlock()
+
+	if a.overlayMgr != nil {
+		a.overlayMgr.Close()
+	}
 
 	go func() {
 		a.emit(eventTranslationStarted, map[string]string{"source": "screenshot"})
@@ -195,11 +204,24 @@ func (a *App) SaveSettings(payload SettingsDTO) (*SettingsDTO, error) {
 
 // UITranslationResult 用于前端展示
 type UITranslationResult struct {
-	OriginalText   string    `json:"originalText"`
-	TranslatedText string    `json:"translatedText"`
-	Source         string    `json:"source"`
-	Timestamp      time.Time `json:"timestamp"`
-	DurationMs     int64     `json:"durationMs"`
+	OriginalText   string              `json:"originalText"`
+	TranslatedText string              `json:"translatedText"`
+	Source         string              `json:"source"`
+	Timestamp      time.Time           `json:"timestamp"`
+	DurationMs     int64               `json:"durationMs"`
+	Bounds         *UIScreenshotBounds `json:"bounds,omitempty"`
+}
+
+// UIScreenshotBounds 将截图范围暴露给前端用于定位浮窗
+type UIScreenshotBounds struct {
+	StartX int `json:"startX"`
+	StartY int `json:"startY"`
+	EndX   int `json:"endX"`
+	EndY   int `json:"endY"`
+	Left   int `json:"left"`
+	Top    int `json:"top"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 // SettingsDTO 前端-后端交互的配置载体
@@ -353,6 +375,9 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			"stage":   "screenshot",
 			"message": err.Error(),
 		})
+		if a.overlayMgr != nil {
+			a.overlayMgr.Close()
+		}
 		return false
 	}
 
@@ -362,6 +387,16 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		Source:         "screenshot",
 		Timestamp:      time.Now(),
 		DurationMs:     result.ProcessingTime.Milliseconds(),
+		Bounds: &UIScreenshotBounds{
+			StartX: result.Bounds.StartX,
+			StartY: result.Bounds.StartY,
+			EndX:   result.Bounds.EndX,
+			EndY:   result.Bounds.EndY,
+			Left:   result.Bounds.Left,
+			Top:    result.Bounds.Top,
+			Width:  result.Bounds.Width,
+			Height: result.Bounds.Height,
+		},
 	}
 
 	if strings.TrimSpace(result.ExtractedText) == "" {
@@ -370,6 +405,9 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			"message": "未检测到文字内容",
 		})
 		a.emit(eventTranslationIdle, nil)
+		if a.overlayMgr != nil {
+			a.overlayMgr.Close()
+		}
 		return false
 	}
 
@@ -383,11 +421,25 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			"stage":   "translate",
 			"message": "翻译结果为空",
 		})
+		if a.overlayMgr != nil {
+			a.overlayMgr.Close()
+		}
 		return false
 	}
 
 	a.emit(eventTranslationResult, uiResult)
 	a.postProcessTranslation(uiResult.TranslatedText)
+	if a.overlayMgr != nil && uiResult.Bounds != nil {
+		rect := overlay.Rect{
+			Left:   uiResult.Bounds.Left,
+			Top:    uiResult.Bounds.Top,
+			Width:  uiResult.Bounds.Width,
+			Height: uiResult.Bounds.Height,
+		}
+		if err := a.overlayMgr.Show(uiResult.TranslatedText, rect); err != nil {
+			a.logError(fmt.Sprintf("展示翻译浮窗失败: %v", err))
+		}
+	}
 	return true
 }
 
@@ -435,6 +487,9 @@ func (a *App) quitApplication() {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.teardownSystemTray()
+	if a.overlayMgr != nil {
+		a.overlayMgr.Close()
+	}
 }
 
 func (a *App) resolveAPIKey() (string, error) {

@@ -26,6 +26,32 @@ export namespace main {
 	        this.translatePrompt = source["translatePrompt"];
 	    }
 	}
+	export class UIScreenshotBounds {
+	    startX: number;
+	    startY: number;
+	    endX: number;
+	    endY: number;
+	    left: number;
+	    top: number;
+	    width: number;
+	    height: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UIScreenshotBounds(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startX = source["startX"];
+	        this.startY = source["startY"];
+	        this.endX = source["endX"];
+	        this.endY = source["endY"];
+	        this.left = source["left"];
+	        this.top = source["top"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	    }
+	}
 	export class UITranslationResult {
 	    originalText: string;
 	    translatedText: string;
@@ -33,6 +59,7 @@ export namespace main {
 	    // Go type: time
 	    timestamp: any;
 	    durationMs: number;
+	    bounds?: UIScreenshotBounds;
 	
 	    static createFrom(source: any = {}) {
 	        return new UITranslationResult(source);
@@ -45,6 +72,7 @@ export namespace main {
 	        this.source = source["source"];
 	        this.timestamp = this.convertValues(source["timestamp"], null);
 	        this.durationMs = source["durationMs"];
+	        this.bounds = this.convertValues(source["bounds"], UIScreenshotBounds);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
