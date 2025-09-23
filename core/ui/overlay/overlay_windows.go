@@ -17,6 +17,8 @@ const (
 	windowClassName = "TranslaterOverlayWindow"
 	windowPadding   = 14
 	lwaAlpha        = 0x02
+	vkEscape        = 0x1B
+	escHotkeyID     = 0x4F52
 )
 
 var (
@@ -28,6 +30,8 @@ var (
 	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
 	procCreateSolidBrush           = gdi32.NewProc("CreateSolidBrush")
 	procFillRect                   = user32.NewProc("FillRect")
+	procRegisterHotKey             = user32.NewProc("RegisterHotKey")
+	procUnregisterHotKey           = user32.NewProc("UnregisterHotKey")
 )
 
 // Manager coordinates overlay window lifecycle on Windows.
@@ -87,6 +91,7 @@ type overlayWindow struct {
 	fontRectWidth  int32
 	fontRectHeight int32
 	fontPointSize  int
+	escHotkey      bool
 }
 
 func newOverlayWindow(text string, rect Rect) (*overlayWindow, error) {
@@ -179,6 +184,7 @@ func (ow *overlayWindow) createWindow() error {
 	if err := setLayeredWindowAttributes(hwnd, 0, 240, lwaAlpha); err != nil {
 		return err
 	}
+	ow.registerEscapeHotkey()
 	win.ShowWindow(hwnd, win.SW_SHOWNOACTIVATE)
 	win.UpdateWindow(hwnd)
 	return nil
@@ -224,6 +230,16 @@ func overlayWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 		ow.cleanup()
 		win.PostQuitMessage(0)
 		return 0
+	case win.WM_HOTKEY:
+		if uintptr(wParam) == escHotkeyID {
+			win.PostMessage(hwnd, win.WM_CLOSE, 0, 0)
+			return 0
+		}
+	case win.WM_KEYDOWN, win.WM_SYSKEYDOWN:
+		if wParam == vkEscape {
+			win.PostMessage(hwnd, win.WM_CLOSE, 0, 0)
+			return 0
+		}
 	case win.WM_ERASEBKGND:
 		return 1
 	}
@@ -313,6 +329,25 @@ func createSolidBrush(color win.COLORREF) (win.HBRUSH, error) {
 		return 0, err
 	}
 	return win.HBRUSH(r1), nil
+}
+
+func (ow *overlayWindow) registerEscapeHotkey() {
+	if procRegisterHotKey == nil {
+		return
+	}
+	r1, _, err := procRegisterHotKey.Call(
+		uintptr(ow.hwnd),
+		escHotkeyID,
+		0,
+		vkEscape,
+	)
+	if r1 == 0 {
+		if err != syscall.Errno(0) {
+			fmt.Printf("RegisterHotKey ESC failed: %v\n", err)
+		}
+		return
+	}
+	ow.escHotkey = true
 }
 
 func (ow *overlayWindow) ensureFittingFont(hdc win.HDC, target *win.RECT) win.HFONT {
@@ -425,6 +460,11 @@ func (ow *overlayWindow) cleanup() {
 	}
 	ow.fontRectWidth = 0
 	ow.fontRectHeight = 0
+	ow.fontPointSize = 0
+	if ow.escHotkey {
+		procUnregisterHotKey.Call(uintptr(ow.hwnd), escHotkeyID)
+		ow.escHotkey = false
+	}
 }
 
 func maxInt(a, b int) int {
