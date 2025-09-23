@@ -22,7 +22,7 @@ func (a *App) initSystemTray() {
 			systrayStartedMux.Unlock()
 
 			systray.SetIcon(trayIcon)
-			systray.SetTooltip("沉浸翻译桌面版")
+			systray.SetTooltip("沉浸翻译")
 
 			showItem := systray.AddMenuItem("显示主窗口", "显示主窗口")
 			hideItem := systray.AddMenuItem("隐藏主窗口", "隐藏主窗口")

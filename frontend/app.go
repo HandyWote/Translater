@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"Translater/ai"
-	"Translater/config"
-	"Translater/hotkey"
-	"Translater/screenshot"
-	"Translater/service"
-	"Translater/ui/overlay"
+	"Translater/core/ai"
+	"Translater/core/config"
+	"Translater/core/hotkey"
+	"Translater/core/screenshot"
+	"Translater/core/translation"
+	"Translater/core/ui/overlay"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -37,7 +37,7 @@ type App struct {
 	settingsManager *config.SettingsManager
 	settings        config.Settings
 
-	translationSvc     service.TranslationService
+	translationSvc     translation.Service
 	screenshotMgr      *screenshot.Manager
 	currentAPIKey      string
 	screenshotLocker   sync.Mutex
@@ -265,7 +265,7 @@ func (a *App) ensureService() error {
 	}
 
 	if a.translationSvc == nil || apiKey != a.currentAPIKey {
-		a.translationSvc = service.NewTranslationService(
+		a.translationSvc = translation.NewService(
 			ai.NewZhipuAIClient(apiKey),
 			a.settings.ExtractPrompt,
 			a.settings.TranslatePrompt,

@@ -1,24 +1,25 @@
-package service
+package translation
 
 import (
-	"Translater/ai"
-	"Translater/prompts"
-	"Translater/screenshot"
 	"fmt"
 	"strings"
 	"time"
+
+	"Translater/core/ai"
+	"Translater/core/prompts"
+	"Translater/core/screenshot"
 )
 
-// TranslationService 翻译服务接口
-type TranslationService interface {
+// Service 翻译服务接口
+type Service interface {
 	ProcessScreenshot(startX, startY, endX, endY int) bool
 	ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error)
 	TranslateText(input string) (*TextTranslationResult, error)
 	UpdatePrompts(extract, translate string)
 }
 
-// TranslationServiceImpl 翻译服务实现
-type TranslationServiceImpl struct {
+// ServiceImpl 翻译服务实现
+type ServiceImpl struct {
 	AIClient        *ai.ZhipuAIClient
 	extractPrompt   string
 	translatePrompt string
@@ -54,9 +55,9 @@ type TextTranslationResult struct {
 	ProcessingTime  time.Duration
 }
 
-// NewTranslationService 创建新的翻译服务
-func NewTranslationService(aiClient *ai.ZhipuAIClient, extractPrompt, translatePrompt string) TranslationService {
-	return &TranslationServiceImpl{
+// NewService 创建新的翻译服务
+func NewService(aiClient *ai.ZhipuAIClient, extractPrompt, translatePrompt string) Service {
+	return &ServiceImpl{
 		AIClient:        aiClient,
 		extractPrompt:   normalisePrompt(extractPrompt, prompts.DefaultExtractPrompt),
 		translatePrompt: normalisePrompt(translatePrompt, prompts.DefaultTranslatePrompt),
@@ -104,7 +105,7 @@ func newScreenshotBounds(startX, startY, endX, endY int) ScreenshotBounds {
 }
 
 // ProcessScreenshot 处理截图：截图->提取文字->翻译
-func (s *TranslationServiceImpl) ProcessScreenshot(startX, startY, endX, endY int) bool {
+func (s *ServiceImpl) ProcessScreenshot(startX, startY, endX, endY int) bool {
 	fmt.Println("开始处理截图...")
 
 	result, err := s.ProcessScreenshotDetailed(startX, startY, endX, endY)
@@ -125,7 +126,7 @@ func (s *TranslationServiceImpl) ProcessScreenshot(startX, startY, endX, endY in
 }
 
 // ProcessScreenshotDetailed 执行截图、OCR、翻译并返回完整结果
-func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error) {
+func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error) {
 	if s.AIClient == nil {
 		return nil, fmt.Errorf("AI client 未初始化")
 	}
@@ -187,7 +188,7 @@ func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX,
 }
 
 // TranslateText 翻译纯文本
-func (s *TranslationServiceImpl) TranslateText(input string) (*TextTranslationResult, error) {
+func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error) {
 	if s.AIClient == nil {
 		return nil, fmt.Errorf("AI client 未初始化")
 	}
@@ -220,7 +221,7 @@ func (s *TranslationServiceImpl) TranslateText(input string) (*TextTranslationRe
 }
 
 // UpdatePrompts 允许在运行时刷新提示词配置。
-func (s *TranslationServiceImpl) UpdatePrompts(extract, translate string) {
+func (s *ServiceImpl) UpdatePrompts(extract, translate string) {
 	s.extractPrompt = normalisePrompt(extract, prompts.DefaultExtractPrompt)
 	s.translatePrompt = normalisePrompt(translate, prompts.DefaultTranslatePrompt)
 }

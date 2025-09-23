@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 
-	"Translater/ai"
-	"Translater/config"
-	"Translater/hotkey"
-	"Translater/prompts"
-	"Translater/screenshot"
-	"Translater/service"
+	"Translater/core/ai"
+	"Translater/core/config"
+	"Translater/core/hotkey"
+	"Translater/core/prompts"
+	"Translater/core/screenshot"
+	"Translater/core/translation"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
 	aiClient := ai.NewZhipuAIClient(apiKey)
 
 	// 创建翻译服务
-	translationService := service.NewTranslationService(aiClient, prompts.DefaultExtractPrompt, prompts.DefaultTranslatePrompt)
+	translationService := translation.NewService(aiClient, prompts.DefaultExtractPrompt, prompts.DefaultTranslatePrompt)
 
 	// 设置截图处理函数
 	screenshotManager.SetCaptureHandler(func(startX, startY, endX, endY int) bool {

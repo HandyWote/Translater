@@ -207,7 +207,7 @@ const lastUpdatedText = computed(() => {
 	<div class="app-shell">
 		<header class="app-header">
 			<div class="title-block">
-				<h1>沉浸翻译桌面版</h1>
+				<h1>沉浸翻译</h1>
 				<p class="subtitle">快速截取、识别与翻译，专注阅读理解</p>
 			</div>
 			<nav class="tab-bar">
