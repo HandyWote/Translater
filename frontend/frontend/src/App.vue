@@ -5,7 +5,7 @@ import HistoryPanel from './components/HistoryPanel.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import type {SettingsState, StatusMessage, TranslationResult} from './types';
 import {defaultSettingsState, formatTimestamp, mapSettings, mapTranslationResult, toSettingsPayload} from './types';
-import {GetSettings, SaveSettings, StartScreenshotTranslation, TranslateText} from '../wailsjs/go/main/App';
+import {GetSettings, SaveSettings, StartScreenshotTranslation} from '../wailsjs/go/main/App';
 import {EventsOff, EventsOn, WindowSetDarkTheme, WindowSetLightTheme, WindowSetSystemDefaultTheme} from '../wailsjs/runtime/runtime';
 
 type ActiveTab = 'translate' | 'history' | 'settings';
@@ -97,22 +97,6 @@ async function requestScreenshot() {
 	} catch (error: any) {
 		const message = error instanceof Error ? error.message : String(error);
 		handleTranslationError('screenshot', message);
-	}
-}
-
-async function requestManualTranslation(text: string) {
-	if (apiKeyMissing.value) {
-		activeTab.value = 'settings';
-		pushToast('请先配置 API Key');
-		return;
-	}
-	isBusy.value = true;
-	statusMessage.value = {stage: 'manual', message: '正在请求翻译…'};
-	try {
-		await TranslateText(text);
-	} catch (error: any) {
-		const message = error instanceof Error ? error.message : String(error);
-		handleTranslationError('manual', message);
 	}
 }
 
@@ -244,7 +228,6 @@ const lastUpdatedText = computed(() => {
 				:is-busy="isBusy"
 				:status-message="statusMessage"
 				:api-key-missing="apiKeyMissing"
-				@manual-translate="requestManualTranslation"
 				@start-screenshot="requestScreenshot"
 			/>
 			<HistoryPanel

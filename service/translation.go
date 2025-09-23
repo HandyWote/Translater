@@ -14,11 +14,14 @@ type TranslationService interface {
 	ProcessScreenshot(startX, startY, endX, endY int) bool
 	ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error)
 	TranslateText(input string) (*TextTranslationResult, error)
+	UpdatePrompts(extract, translate string)
 }
 
 // TranslationServiceImpl 翻译服务实现
 type TranslationServiceImpl struct {
-	AIClient *ai.ZhipuAIClient
+	AIClient        *ai.ZhipuAIClient
+	extractPrompt   string
+	translatePrompt string
 }
 
 // ScreenshotTranslationResult 包含一次截图翻译的详情
@@ -39,10 +42,20 @@ type TextTranslationResult struct {
 }
 
 // NewTranslationService 创建新的翻译服务
-func NewTranslationService(aiClient *ai.ZhipuAIClient) TranslationService {
+func NewTranslationService(aiClient *ai.ZhipuAIClient, extractPrompt, translatePrompt string) TranslationService {
 	return &TranslationServiceImpl{
-		AIClient: aiClient,
+		AIClient:        aiClient,
+		extractPrompt:   normalisePrompt(extractPrompt, prompts.DefaultExtractPrompt),
+		translatePrompt: normalisePrompt(translatePrompt, prompts.DefaultTranslatePrompt),
 	}
+}
+
+func normalisePrompt(value string, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed != "" {
+		return trimmed
+	}
+	return fallback
 }
 
 // ProcessScreenshot 处理截图：截图->提取文字->翻译
@@ -80,7 +93,7 @@ func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX,
 	}
 
 	// OCR 阶段
-	extractResponse, err := s.AIClient.ImageToWords(prompts.ExtractPrompt, imageData, "image/png", "")
+	extractResponse, err := s.AIClient.ImageToWords(s.extractPrompt, imageData, "image/png", "")
 	if err != nil {
 		return nil, fmt.Errorf("文字提取失败: %w", err)
 	}
@@ -96,8 +109,8 @@ func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX,
 
 	result := &ScreenshotTranslationResult{
 		ExtractedText:   extractedText,
-		ExtractPrompt:   prompts.ExtractPrompt,
-		TranslatePrompt: prompts.TranslatePrompt,
+		ExtractPrompt:   s.extractPrompt,
+		TranslatePrompt: s.translatePrompt,
 	}
 
 	if strings.TrimSpace(extractedText) == "" {
@@ -106,7 +119,7 @@ func (s *TranslationServiceImpl) ProcessScreenshotDetailed(startX, startY, endX,
 	}
 
 	// 翻译阶段
-	translateResponse, err := s.AIClient.Translate(extractedText, prompts.TranslatePrompt)
+	translateResponse, err := s.AIClient.Translate(extractedText, s.translatePrompt)
 	if err != nil {
 		return nil, fmt.Errorf("翻译失败: %w", err)
 	}
@@ -137,7 +150,7 @@ func (s *TranslationServiceImpl) TranslateText(input string) (*TextTranslationRe
 	}
 
 	started := time.Now()
-	translateResponse, err := s.AIClient.Translate(input, prompts.TranslatePrompt)
+	translateResponse, err := s.AIClient.Translate(input, s.translatePrompt)
 	if err != nil {
 		return nil, fmt.Errorf("翻译失败: %w", err)
 	}
@@ -154,9 +167,15 @@ func (s *TranslationServiceImpl) TranslateText(input string) (*TextTranslationRe
 	return &TextTranslationResult{
 		OriginalText:    input,
 		TranslatedText:  translatedText,
-		TranslatePrompt: prompts.TranslatePrompt,
+		TranslatePrompt: s.translatePrompt,
 		ProcessingTime:  time.Since(started),
 	}, nil
+}
+
+// UpdatePrompts 允许在运行时刷新提示词配置。
+func (s *TranslationServiceImpl) UpdatePrompts(extract, translate string) {
+	s.extractPrompt = normalisePrompt(extract, prompts.DefaultExtractPrompt)
+	s.translatePrompt = normalisePrompt(translate, prompts.DefaultTranslatePrompt)
 }
 
 func messageContentToString(content interface{}) (string, error) {

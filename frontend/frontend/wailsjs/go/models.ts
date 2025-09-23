@@ -8,6 +8,8 @@ export namespace main {
 	    theme: string;
 	    showToastOnComplete: boolean;
 	    hotkeyCombination: string;
+	    extractPrompt: string;
+	    translatePrompt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SettingsDTO(source);
@@ -22,6 +24,8 @@ export namespace main {
 	        this.theme = source["theme"];
 	        this.showToastOnComplete = source["showToastOnComplete"];
 	        this.hotkeyCombination = source["hotkeyCombination"];
+	        this.extractPrompt = source["extractPrompt"];
+	        this.translatePrompt = source["translatePrompt"];
 	    }
 	}
 	export class UITranslationResult {

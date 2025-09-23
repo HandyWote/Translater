@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import {computed, reactive, ref, watch} from 'vue';
 import type {SettingsState} from '../types';
+import {defaultSettingsState} from '../types';
 
 const props = defineProps<{
 	settings: SettingsState;
@@ -114,6 +115,12 @@ function handleSubmit(event: Event) {
 	emit('submit', {...form});
 }
 
+function resetPrompts() {
+	const defaults = defaultSettingsState();
+	form.extractPrompt = defaults.extractPrompt;
+	form.translatePrompt = defaults.translatePrompt;
+}
+
 const languageOptions = [
 	{label: '中文 (简体)', value: 'zh-CN'},
 	{label: '中文 (繁体)', value: 'zh-TW'},
@@ -148,7 +155,7 @@ const themeOptions = [
 				<h2>翻译行为</h2>
 				<p>控制翻译语言、复制等自动化行为。</p>
 			</header>
-			<div class="grid">
+			<div class="behavior-list">
 				<label class="field">
 					<span>目标语言</span>
 					<select v-model="form.targetLanguage">
@@ -176,6 +183,34 @@ const themeOptions = [
 						<span>翻译完成时弹出底部提醒。</span>
 					</div>
 				</label>
+			</div>
+		</section>
+
+		<section class="card">
+			<header>
+				<h2>提示词管理</h2>
+				<p>自定义 OCR 与翻译阶段的提示词，适配不同语境。</p>
+			</header>
+			<label class="field">
+				<span>文字提取提示词</span>
+				<textarea
+					v-model="form.extractPrompt"
+					class="prompt-textarea"
+					rows="3"
+					placeholder="请输入用于提取截图文本的提示词"
+				></textarea>
+			</label>
+			<label class="field">
+				<span>翻译提示词</span>
+				<textarea
+					v-model="form.translatePrompt"
+					class="prompt-textarea"
+					rows="4"
+					placeholder="请输入用于翻译文本的提示词"
+				></textarea>
+			</label>
+			<div class="prompt-actions">
+				<button type="button" class="ghost" @click="resetPrompts">恢复默认提示词</button>
 			</div>
 		</section>
 
@@ -267,7 +302,8 @@ header p {
 }
 
 input,
-select {
+select,
+textarea {
 	border-radius: 12px;
 	border: 1px solid var(--border-subtle);
 	background: var(--surface-base);
@@ -277,7 +313,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
 	outline: none;
 	border-color: var(--accent);
 	box-shadow: 0 0 0 2px rgba(20, 131, 255, 0.2);
@@ -292,6 +329,43 @@ small {
 	display: grid;
 	gap: 1rem;
 	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.behavior-list {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.behavior-list .toggle,
+.behavior-list .field {
+	width: 100%;
+}
+
+.prompt-textarea {
+	min-height: 120px;
+	resize: vertical;
+	line-height: 1.5;
+}
+
+.prompt-actions {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: 0.5rem;
+}
+
+.ghost {
+	border: 1px solid var(--border-subtle);
+	border-radius: 10px;
+	background: transparent;
+	color: var(--color-text-secondary);
+	padding: 0.55rem 1.1rem;
+	cursor: pointer;
+	transition: background 0.18s ease;
+}
+
+.ghost:hover {
+	background: var(--surface-hover);
 }
 
 .hotkey-grid {

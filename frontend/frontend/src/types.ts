@@ -23,6 +23,8 @@ export interface SettingsState {
 	theme: string;
 	showToastOnComplete: boolean;
 	hotkeyCombination: string;
+	extractPrompt: string;
+	translatePrompt: string;
 }
 
 export function defaultSettingsState(): SettingsState {
@@ -34,6 +36,8 @@ export function defaultSettingsState(): SettingsState {
 		theme: 'system',
 		showToastOnComplete: true,
 		hotkeyCombination: 'Alt+T',
+		extractPrompt: '请提取这张图片中的所有文字内容，只返回文字，不要添加任何其他说明。',
+		translatePrompt: '请将以下文本翻译成中文，保持原文的格式和结构：',
 	};
 }
 
@@ -51,14 +55,17 @@ export function mapTranslationResult(data: main.UITranslationResult | any): Tran
 
 export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 	const converted = data instanceof main.SettingsDTO ? data : main.SettingsDTO.createFrom(data);
+	const defaults = defaultSettingsState();
 	return {
 		apiKeyOverride: converted.apiKeyOverride ?? '',
-		targetLanguage: converted.targetLanguage || 'zh-CN',
+		targetLanguage: converted.targetLanguage || defaults.targetLanguage,
 		autoCopyResult: Boolean(converted.autoCopyResult),
 		keepWindowOnTop: Boolean(converted.keepWindowOnTop),
-		theme: converted.theme || 'system',
+		theme: converted.theme || defaults.theme,
 		showToastOnComplete: Boolean(converted.showToastOnComplete),
-		hotkeyCombination: converted.hotkeyCombination || 'Alt+T',
+		hotkeyCombination: converted.hotkeyCombination || defaults.hotkeyCombination,
+		extractPrompt: converted.extractPrompt || defaults.extractPrompt,
+		translatePrompt: converted.translatePrompt || defaults.translatePrompt,
 	};
 }
 
@@ -71,6 +78,8 @@ export function toSettingsPayload(state: SettingsState): main.SettingsDTO {
 		theme: state.theme,
 		showToastOnComplete: state.showToastOnComplete,
 		hotkeyCombination: state.hotkeyCombination,
+		extractPrompt: state.extractPrompt,
+		translatePrompt: state.translatePrompt,
 	});
 }
 

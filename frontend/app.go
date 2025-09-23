@@ -69,6 +69,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	// 根据配置调整窗口状态
 	a.applyWindowPreferences()
+	a.initSystemTray()
 }
 
 // StartScreenshotTranslation 触发一次截图翻译流程
@@ -210,6 +211,8 @@ type SettingsDTO struct {
 	Theme               string `json:"theme"`
 	ShowToastOnComplete bool   `json:"showToastOnComplete"`
 	HotkeyCombination   string `json:"hotkeyCombination"`
+	ExtractPrompt       string `json:"extractPrompt"`
+	TranslatePrompt     string `json:"translatePrompt"`
 }
 
 func (a *App) initSettings() error {
@@ -241,8 +244,16 @@ func (a *App) ensureService() error {
 	}
 
 	if a.translationSvc == nil || apiKey != a.currentAPIKey {
-		a.translationSvc = service.NewTranslationService(ai.NewZhipuAIClient(apiKey))
+		a.translationSvc = service.NewTranslationService(
+			ai.NewZhipuAIClient(apiKey),
+			a.settings.ExtractPrompt,
+			a.settings.TranslatePrompt,
+		)
 		a.currentAPIKey = apiKey
+	}
+
+	if a.translationSvc != nil {
+		a.translationSvc.UpdatePrompts(a.settings.ExtractPrompt, a.settings.TranslatePrompt)
 	}
 
 	if a.screenshotMgr == nil {
@@ -402,6 +413,31 @@ func (a *App) applyWindowPreferences() {
 	runtime.WindowSetAlwaysOnTop(a.ctx, a.settings.KeepWindowOnTop)
 }
 
+func (a *App) showWindow() {
+	if a.ctx == nil {
+		return
+	}
+	runtime.WindowShow(a.ctx)
+}
+
+func (a *App) hideWindow() {
+	if a.ctx == nil {
+		return
+	}
+	runtime.WindowHide(a.ctx)
+}
+
+func (a *App) quitApplication() {
+	a.teardownSystemTray()
+	if a.ctx != nil {
+		runtime.Quit(a.ctx)
+	}
+}
+
+func (a *App) shutdown(ctx context.Context) {
+	a.teardownSystemTray()
+}
+
 func (a *App) resolveAPIKey() (string, error) {
 	if key := strings.TrimSpace(a.settings.APIKeyOverride); key != "" {
 		return key, nil
@@ -433,6 +469,8 @@ func fromConfigSettings(settings config.Settings) SettingsDTO {
 		Theme:               settings.Theme,
 		ShowToastOnComplete: settings.ShowToastOnComplete,
 		HotkeyCombination:   settings.HotkeyCombination,
+		ExtractPrompt:       settings.ExtractPrompt,
+		TranslatePrompt:     settings.TranslatePrompt,
 	}
 }
 
@@ -458,5 +496,7 @@ func toConfigSettings(dto SettingsDTO) config.Settings {
 			settings.HotkeyCombination = config.DefaultSettings().HotkeyCombination
 		}
 	}
+	settings.ExtractPrompt = strings.TrimSpace(dto.ExtractPrompt)
+	settings.TranslatePrompt = strings.TrimSpace(dto.TranslatePrompt)
 	return settings
 }

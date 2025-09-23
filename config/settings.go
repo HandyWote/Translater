@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"Translater/prompts"
 )
 
 // Settings 保存桌面端可配置项
@@ -18,6 +20,8 @@ type Settings struct {
 	Theme               string `json:"theme"`
 	ShowToastOnComplete bool   `json:"showToastOnComplete"`
 	HotkeyCombination   string `json:"hotkeyCombination"`
+	ExtractPrompt       string `json:"extractPrompt"`
+	TranslatePrompt     string `json:"translatePrompt"`
 }
 
 // DefaultSettings 返回默认配置
@@ -29,6 +33,8 @@ func DefaultSettings() Settings {
 		Theme:               "system",
 		ShowToastOnComplete: true,
 		HotkeyCombination:   "Alt+T",
+		ExtractPrompt:       prompts.DefaultExtractPrompt,
+		TranslatePrompt:     prompts.DefaultTranslatePrompt,
 	}
 }
 
@@ -114,5 +120,11 @@ func applySettingsDefaults(settings *Settings) {
 	}
 	if strings.TrimSpace(settings.HotkeyCombination) == "" {
 		settings.HotkeyCombination = defaults.HotkeyCombination
+	}
+	if strings.TrimSpace(settings.ExtractPrompt) == "" {
+		settings.ExtractPrompt = defaults.ExtractPrompt
+	}
+	if strings.TrimSpace(settings.TranslatePrompt) == "" {
+		settings.TranslatePrompt = defaults.TranslatePrompt
 	}
 }

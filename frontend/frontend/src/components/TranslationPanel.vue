@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {computed, ref, watch} from 'vue';
+import {computed, ref} from 'vue';
 import type {StatusMessage, TranslationResult} from '../types';
 import {formatDuration} from '../types';
 
@@ -12,38 +12,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	(event: 'start-screenshot'): void;
-	(event: 'manual-translate', value: string): void;
 }>();
 
-const manualInput = ref('');
-const validationError = ref('');
 const showCopiedTip = ref(false);
 
-watch(
-	() => props.currentResult,
-	(result) => {
-		if (!result) {
-			return;
-		}
-		if (result.source === 'manual') {
-			manualInput.value = result.originalText;
-		}
-	},
-);
-
 function triggerScreenshot() {
-	validationError.value = '';
 	emit('start-screenshot');
-}
-
-function submitManual() {
-	const trimmed = manualInput.value.trim();
-	if (!trimmed) {
-		validationError.value = '请输入需要翻译的文本';
-		return;
-	}
-	validationError.value = '';
-	emit('manual-translate', trimmed);
 }
 
 async function copyTranslation() {
@@ -66,30 +40,17 @@ const durationText = computed(() => (props.currentResult ? formatDuration(props.
 
 <template>
 	<section class="panel">
-		<div class="actions">
-			<div class="action-buttons">
-				<button class="primary" :disabled="props.isBusy || props.apiKeyMissing" @click="triggerScreenshot">
-					<span v-if="props.isBusy" class="spinner"></span>
-					开始截图翻译
-				</button>
-				<button class="secondary" :disabled="props.isBusy" @click="submitManual">翻译输入文本</button>
-			</div>
-			<p v-if="props.apiKeyMissing" class="warning">尚未配置 API Key，部分功能不可用，请前往偏好设置。</p>
-			<p v-else class="hint">截图翻译将唤起系统选择器，翻译结果可自动复制到剪贴板。</p>
-		</div>
-
-		<div class="content">
-			<div class="input-card">
-				<header>
-					<h2>手动翻译</h2>
-					<span class="char-counter">{{ manualInput.length }} 字符</span>
-				</header>
-				<textarea
-					v-model="manualInput"
-					:disabled="props.isBusy"
-					placeholder="粘贴或输入需要翻译的文本。支持多段落内容及换行。"
-				></textarea>
-				<p v-if="validationError" class="validation">{{ validationError }}</p>
+		<div class="panel-inner">
+			<div class="actions">
+				<div class="action-row">
+					<button class="primary" :disabled="props.isBusy || props.apiKeyMissing" @click="triggerScreenshot">
+						<span v-if="props.isBusy" class="spinner"></span>
+						开始截图翻译
+					</button>
+					<span v-if="props.statusMessage" class="inline-status">{{ props.statusMessage.message }}</span>
+				</div>
+				<p v-if="props.apiKeyMissing" class="warning">尚未配置 API Key，部分功能不可用，请前往偏好设置。</p>
+				<p v-else class="hint">点击按钮启动截图翻译，结果将在下方展示并可自动复制。</p>
 			</div>
 
 			<div class="result-card" :class="{empty: !hasResult}">
@@ -118,6 +79,13 @@ const durationText = computed(() => (props.currentResult ? formatDuration(props.
 <style scoped>
 .panel {
 	display: flex;
+	justify-content: center;
+}
+
+.panel-inner {
+	width: 100%;
+	max-width: 960px;
+	display: flex;
 	flex-direction: column;
 	gap: 1.2rem;
 }
@@ -126,12 +94,19 @@ const durationText = computed(() => (props.currentResult ? formatDuration(props.
 	display: flex;
 	flex-direction: column;
 	gap: 0.6rem;
+	align-items: flex-start;
 }
 
-.action-buttons {
+.action-row {
 	display: flex;
-	gap: 0.8rem;
+	align-items: center;
+	gap: 0.9rem;
 	flex-wrap: wrap;
+}
+
+.inline-status {
+	font-size: 0.85rem;
+	color: var(--color-text-secondary);
 }
 
 button {
@@ -157,16 +132,6 @@ button:disabled {
 
 .primary:hover:not(:disabled) {
 	transform: translateY(-1px);
-}
-
-.secondary {
-	background: var(--surface-elevated);
-	color: var(--color-text-primary);
-	border: 1px solid var(--border-subtle);
-}
-
-.secondary:hover:not(:disabled) {
-	background: var(--surface-hover);
 }
 
 .ghost {
@@ -201,13 +166,6 @@ button:disabled {
 	color: var(--color-text-tertiary);
 }
 
-.content {
-	display: grid;
-	grid-template-columns: minmax(320px, 1fr) minmax(340px, 1.3fr);
-	gap: 1.2rem;
-}
-
-.input-card,
 .result-card {
 	background: var(--surface-elevated);
 	border-radius: 18px;
@@ -217,9 +175,9 @@ button:disabled {
 	display: flex;
 	flex-direction: column;
 	gap: 0.9rem;
+	min-height: 280px;
 }
 
-.input-card header,
 .result-card header {
 	display: flex;
 	align-items: flex-start;
@@ -227,41 +185,10 @@ button:disabled {
 	gap: 0.8rem;
 }
 
-.input-card h2,
 .result-card h2 {
 	margin: 0;
 	font-size: 1.05rem;
 	font-weight: 600;
-}
-
-.char-counter {
-	font-size: 0.75rem;
-	color: var(--color-text-tertiary);
-}
-
-textarea {
-	flex: 1;
-	min-height: 210px;
-	border-radius: 14px;
-	border: 1px solid var(--border-subtle);
-	background: var(--surface-base);
-	color: inherit;
-	padding: 1rem;
-	font-size: 0.95rem;
-	line-height: 1.5;
-	resize: vertical;
-}
-
-textarea:focus {
-	outline: none;
-	border-color: var(--accent);
-	box-shadow: 0 0 0 2px rgba(20, 131, 255, 0.2);
-}
-
-.validation {
-	margin: 0;
-	color: var(--color-warning);
-	font-size: 0.82rem;
 }
 
 .result-card.empty {
@@ -317,13 +244,8 @@ textarea:focus {
 }
 
 @media (max-width: 1000px) {
-	.content {
-		grid-template-columns: 1fr;
-	}
-
-	.result-card,
-	.input-card {
-		min-height: unset;
+	.panel-inner {
+		max-width: 100%;
 	}
 
 	.result-body {
