@@ -59,7 +59,7 @@ Translater 是一个面向 Windows 平台的截图翻译工具：按下快捷键
      API-KEY=sk-xxxxxxxxxxxxxxxx
      ```
      或者运行应用后，在设置面板填写「API Key」，程序会把密钥保存在 `%AppData%/Translater/settings.json`。
-   - 可以直接在 [智谱开放平台](https://open.bigmodel.cn/) 创建密钥，默认模型额度为免费档，满足本项目日常使用。
+   - 可以直接在 [智谱开放平台](https://open.bigmodel.cn/) 创建密钥，默认模型额度为免费，满足本项目日常使用。
 
 3. **运行开发版本**
    - 纯 CLI 热键版本：`go run .`
