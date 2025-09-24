@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import {computed, reactive, ref, watch} from 'vue';
 import type {SettingsState} from '../types';
-import {defaultSettingsState} from '../types';
+import {DEFAULT_EXTRACT_PROMPT, DEFAULT_TRANSLATE_PROMPT, defaultSettingsState} from '../types';
 
 const props = defineProps<{
 	settings: SettingsState;
@@ -110,6 +110,26 @@ const hotkeyPreview = computed(() => {
 	return value ? value : DEFAULT_HOTKEY;
 });
 
+const extractPromptField = computed<string>({
+	get() {
+		return form.extractPrompt === DEFAULT_EXTRACT_PROMPT ? '' : form.extractPrompt;
+	},
+	set(value) {
+		const trimmed = value?.trim() ?? '';
+		form.extractPrompt = trimmed ? value : DEFAULT_EXTRACT_PROMPT;
+	},
+});
+
+const translatePromptField = computed<string>({
+	get() {
+		return form.translatePrompt === DEFAULT_TRANSLATE_PROMPT ? '' : form.translatePrompt;
+	},
+	set(value) {
+		const trimmed = value?.trim() ?? '';
+		form.translatePrompt = trimmed ? value : DEFAULT_TRANSLATE_PROMPT;
+	},
+});
+
 function handleSubmit(event: Event) {
 	event.preventDefault();
 	emit('submit', {...form});
@@ -180,19 +200,19 @@ const themeOptions = [
 			<label class="field">
 				<span>文字提取提示词</span>
 				<textarea
-					v-model="form.extractPrompt"
+					v-model="extractPromptField"
 					class="prompt-textarea"
 					rows="3"
-					placeholder="请输入用于提取截图文本的提示词"
+					placeholder="这里输入文字提取作用的提示词（正常无需修改）"
 				></textarea>
 			</label>
 			<label class="field">
 				<span>翻译提示词</span>
 				<textarea
-					v-model="form.translatePrompt"
+					v-model="translatePromptField"
 					class="prompt-textarea"
 					rows="4"
-					placeholder="请输入用于翻译文本的提示词"
+					placeholder="这里输入翻译作用的提示词（正常无需修改）"
 				></textarea>
 			</label>
 			<div class="prompt-actions">
