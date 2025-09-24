@@ -19,6 +19,7 @@ const (
 	lwaAlpha        = 0x02
 	vkEscape        = 0x1B
 	escHotkeyID     = 0x4F52
+	textFitPadding  = 4
 )
 
 var (
@@ -280,12 +281,25 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 	win.SetTextColor(hdc, win.RGB(240, 247, 255))
 	if len(ow.textUTF16) > 0 {
 		font := ow.ensureFittingFont(hdc, &inner)
+		drawRect := inner
 		var previous win.HGDIOBJ
 		if font != 0 {
+			textHeight := ow.measureTextHeight(hdc, font, int(inner.Right-inner.Left))
+			availableHeight := int(drawRect.Bottom - drawRect.Top)
+			if textHeight > 0 && availableHeight > textHeight {
+				offset := int32((availableHeight - textHeight) / 2)
+				if offset > 0 {
+					drawRect.Top += offset
+					bottom := drawRect.Top + int32(textHeight)
+					if bottom < drawRect.Bottom {
+						drawRect.Bottom = bottom
+					}
+				}
+			}
 			previous = win.SelectObject(hdc, win.HGDIOBJ(font))
 			defer win.SelectObject(hdc, previous)
 		}
-		win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &inner, win.DT_LEFT|win.DT_WORDBREAK|win.DT_NOPREFIX, nil)
+		win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &drawRect, win.DT_LEFT|win.DT_WORDBREAK|win.DT_NOPREFIX, nil)
 	}
 }
 
@@ -417,16 +431,40 @@ func (ow *overlayWindow) ensureFittingFont(hdc win.HDC, target *win.RECT) win.HF
 	return ow.font
 }
 
-func (ow *overlayWindow) textFits(hdc win.HDC, font win.HFONT, width, height int) bool {
+func (ow *overlayWindow) measureText(hdc win.HDC, font win.HFONT, width int) (int, int) {
+	if font == 0 || width <= 0 {
+		return 0, 0
+	}
 	prev := win.SelectObject(hdc, win.HGDIOBJ(font))
 	defer win.SelectObject(hdc, prev)
 
 	calcRect := win.RECT{Left: 0, Top: 0, Right: int32(width), Bottom: 0}
 	flags := uint32(win.DT_LEFT | win.DT_WORDBREAK | win.DT_NOPREFIX | win.DT_CALCRECT)
 	win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &calcRect, flags, nil)
-	requiredWidth := calcRect.Right - calcRect.Left
-	requiredHeight := calcRect.Bottom - calcRect.Top
-	return int(requiredWidth) <= width && int(requiredHeight) <= height
+	requiredWidth := int(calcRect.Right - calcRect.Left)
+	requiredHeight := int(calcRect.Bottom - calcRect.Top)
+	return requiredWidth, requiredHeight
+}
+
+func (ow *overlayWindow) measureTextHeight(hdc win.HDC, font win.HFONT, width int) int {
+	_, height := ow.measureText(hdc, font, width)
+	return height
+}
+
+func (ow *overlayWindow) textFits(hdc win.HDC, font win.HFONT, width, height int) bool {
+	requiredWidth, requiredHeight := ow.measureText(hdc, font, width)
+	if requiredWidth == 0 && requiredHeight == 0 {
+		return false
+	}
+	allowedWidth := width
+	if allowedWidth > textFitPadding {
+		allowedWidth -= textFitPadding
+	}
+	allowedHeight := height
+	if allowedHeight > textFitPadding {
+		allowedHeight -= textFitPadding
+	}
+	return requiredWidth <= allowedWidth && requiredHeight <= allowedHeight
 }
 
 func createFontForPoint(logPixelsY int32, pointSize int) win.HFONT {
