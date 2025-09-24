@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"Translater/prompts"
+	"Translater/core/prompts"
 )
 
 // Settings 保存桌面端可配置项
