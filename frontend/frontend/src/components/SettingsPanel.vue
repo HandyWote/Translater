@@ -1,7 +1,14 @@
 <script lang="ts" setup>
 import {computed, reactive, ref, watch} from 'vue';
 import type {SettingsState} from '../types';
-import {DEFAULT_EXTRACT_PROMPT, DEFAULT_TRANSLATE_PROMPT, defaultSettingsState} from '../types';
+import {
+	DEFAULT_API_BASE_URL,
+	DEFAULT_EXTRACT_PROMPT,
+	DEFAULT_TRANSLATE_MODEL,
+	DEFAULT_TRANSLATE_PROMPT,
+	DEFAULT_VISION_MODEL,
+	defaultSettingsState,
+} from '../types';
 
 const props = defineProps<{
 	settings: SettingsState;
@@ -141,6 +148,15 @@ function resetPrompts() {
 	form.translatePrompt = defaults.translatePrompt;
 }
 
+function resetModels() {
+	const defaults = defaultSettingsState();
+	form.apiBaseUrl = defaults.apiBaseUrl;
+	form.visionApiBaseUrl = defaults.visionApiBaseUrl;
+	form.visionApiKeyOverride = defaults.visionApiKeyOverride;
+	form.translateModel = defaults.translateModel;
+	form.visionModel = defaults.visionModel;
+}
+
 const themeOptions = [
 	{label: '跟随系统', value: 'system'},
 	{label: '浅色', value: 'light'},
@@ -155,11 +171,45 @@ const themeOptions = [
 				<h2>API 访问</h2>
 				<p>{{ props.apiKeyMissing ? '未检测到 API Key，请输入有效凭证。' : '已配置 API Key，可直接使用截图和翻译功能。' }}</p>
 			</header>
-			<label class="field">
-				<span>API Key</span>
-				<input v-model="form.apiKeyOverride" type="password" placeholder="sk-xxxxxxxx" autocomplete="off"/>
-				<small>保存后立即生效，仅保存在本机用户配置目录。</small>
-			</label>
+			<div class="grid api-grid">
+				<label class="field">
+					<span>翻译 API Key</span>
+					<input v-model="form.apiKeyOverride" type="password" placeholder="sk-xxxxxxxx" autocomplete="off"/>
+					<small>保存后立即生效，仅保存在本机用户配置目录。</small>
+				</label>
+				<label class="field">
+					<span>视觉 API Key（可选）</span>
+					<input v-model="form.visionApiKeyOverride" type="password" placeholder="sk-xxxxxxxx" autocomplete="off"/>
+					<small>留空时沿用左侧翻译 API Key。</small>
+				</label>
+			</div>
+			<div class="grid api-grid">
+				<label class="field">
+					<span>翻译 API Base URL</span>
+					<input v-model="form.apiBaseUrl" type="text" :placeholder="DEFAULT_API_BASE_URL" autocomplete="off"/>
+					<small>输入兼容 OpenAI Chat Completions 的接口地址，结尾无需斜杠。</small>
+				</label>
+				<label class="field">
+					<span>视觉 API Base URL</span>
+					<input v-model="form.visionApiBaseUrl" type="text" :placeholder="DEFAULT_API_BASE_URL" autocomplete="off"/>
+					<small>留空时沿用左侧接口地址，支持不同服务商。</small>
+				</label>
+			</div>
+			<div class="grid model-grid">
+				<label class="field">
+					<span>翻译模型</span>
+					<input v-model="form.translateModel" type="text" :placeholder="DEFAULT_TRANSLATE_MODEL" autocomplete="off"/>
+					<small>用于文本翻译（Chat Completions）。</small>
+				</label>
+				<label class="field">
+					<span>视觉模型</span>
+					<input v-model="form.visionModel" type="text" :placeholder="DEFAULT_VISION_MODEL" autocomplete="off"/>
+					<small>用于图像识别（多模态消息）。</small>
+				</label>
+			</div>
+			<div class="model-actions">
+				<button type="button" class="ghost" @click="resetModels">恢复默认接口与模型</button>
+			</div>
 		</section>
 
 		<section class="card">
@@ -360,6 +410,12 @@ small {
 	padding-top: 0.5rem;
 }
 
+.model-actions {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: 0.5rem;
+}
+
 .ghost {
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
@@ -376,6 +432,14 @@ small {
 
 .hotkey-grid {
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.api-grid {
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.model-grid {
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .hotkey-preview {

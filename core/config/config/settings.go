@@ -8,19 +8,25 @@ import (
 	"strings"
 	"sync"
 
+	"Translater/core/ai"
 	"Translater/core/prompts"
 )
 
 // Settings 保存桌面端可配置项
 type Settings struct {
-	APIKeyOverride      string `json:"apiKeyOverride"`
-	AutoCopyResult      bool   `json:"autoCopyResult"`
-	KeepWindowOnTop     bool   `json:"keepWindowOnTop"`
-	Theme               string `json:"theme"`
-	ShowToastOnComplete bool   `json:"showToastOnComplete"`
-	HotkeyCombination   string `json:"hotkeyCombination"`
-	ExtractPrompt       string `json:"extractPrompt"`
-	TranslatePrompt     string `json:"translatePrompt"`
+	APIKeyOverride       string `json:"apiKeyOverride"`
+	AutoCopyResult       bool   `json:"autoCopyResult"`
+	KeepWindowOnTop      bool   `json:"keepWindowOnTop"`
+	Theme                string `json:"theme"`
+	ShowToastOnComplete  bool   `json:"showToastOnComplete"`
+	HotkeyCombination    string `json:"hotkeyCombination"`
+	ExtractPrompt        string `json:"extractPrompt"`
+	TranslatePrompt      string `json:"translatePrompt"`
+	APIBaseURL           string `json:"apiBaseUrl"`
+	TranslateModel       string `json:"translateModel"`
+	VisionModel          string `json:"visionModel"`
+	VisionAPIBaseURL     string `json:"visionApiBaseUrl"`
+	VisionAPIKeyOverride string `json:"visionApiKeyOverride"`
 }
 
 // DefaultSettings 返回默认配置
@@ -33,6 +39,10 @@ func DefaultSettings() Settings {
 		HotkeyCombination:   "Alt+T",
 		ExtractPrompt:       prompts.DefaultExtractPrompt,
 		TranslatePrompt:     prompts.DefaultTranslatePrompt,
+		APIBaseURL:          ai.DefaultBaseURL,
+		TranslateModel:      ai.DefaultTranslateModel,
+		VisionModel:         ai.DefaultVisionModel,
+		VisionAPIBaseURL:    ai.DefaultBaseURL,
 	}
 }
 
@@ -109,6 +119,7 @@ func resolveSettingsPath(appName string) (string, error) {
 
 func applySettingsDefaults(settings *Settings) {
 	defaults := DefaultSettings()
+	settings.APIKeyOverride = strings.TrimSpace(settings.APIKeyOverride)
 	if settings.Theme == "" {
 		settings.Theme = defaults.Theme
 	}
@@ -121,4 +132,20 @@ func applySettingsDefaults(settings *Settings) {
 	if strings.TrimSpace(settings.TranslatePrompt) == "" {
 		settings.TranslatePrompt = defaults.TranslatePrompt
 	}
+	settings.APIBaseURL = ai.NormalizeBaseURL(settings.APIBaseURL)
+	settings.TranslateModel = strings.TrimSpace(settings.TranslateModel)
+	if settings.TranslateModel == "" {
+		settings.TranslateModel = defaults.TranslateModel
+	}
+	settings.VisionModel = strings.TrimSpace(settings.VisionModel)
+	if settings.VisionModel == "" {
+		settings.VisionModel = defaults.VisionModel
+	}
+	settings.VisionAPIBaseURL = strings.TrimSpace(settings.VisionAPIBaseURL)
+	if settings.VisionAPIBaseURL == "" {
+		settings.VisionAPIBaseURL = settings.APIBaseURL
+	} else {
+		settings.VisionAPIBaseURL = ai.NormalizeBaseURL(settings.VisionAPIBaseURL)
+	}
+	settings.VisionAPIKeyOverride = strings.TrimSpace(settings.VisionAPIKeyOverride)
 }

@@ -37,18 +37,23 @@ type App struct {
 	settingsManager *config.SettingsManager
 	settings        config.Settings
 
-	translationSvc     translation.Service
-	screenshotMgr      *screenshot.Manager
-	currentAPIKey      string
-	screenshotLocker   sync.Mutex
-	screenshotActive   bool
-	hotkeyMgr          *hotkey.Manager
-	hotkeyMutex        sync.Mutex
-	hotkeyLoopOnce     sync.Once
-	hotkeyRegistered   bool
-	hotkeyID           uintptr
-	currentHotkeyCombo string
-	overlayMgr         *overlay.Manager
+	translationSvc        translation.Service
+	screenshotMgr         *screenshot.Manager
+	currentAPIKey         string
+	currentBaseURL        string
+	currentTranslateModel string
+	currentVisionModel    string
+	currentVisionAPIKey   string
+	currentVisionBaseURL  string
+	screenshotLocker      sync.Mutex
+	screenshotActive      bool
+	hotkeyMgr             *hotkey.Manager
+	hotkeyMutex           sync.Mutex
+	hotkeyLoopOnce        sync.Once
+	hotkeyRegistered      bool
+	hotkeyID              uintptr
+	currentHotkeyCombo    string
+	overlayMgr            *overlay.Manager
 }
 
 // NewApp creates a new App application struct
@@ -226,14 +231,19 @@ type UIScreenshotBounds struct {
 
 // SettingsDTO 前端-后端交互的配置载体
 type SettingsDTO struct {
-	APIKeyOverride      string `json:"apiKeyOverride"`
-	AutoCopyResult      bool   `json:"autoCopyResult"`
-	KeepWindowOnTop     bool   `json:"keepWindowOnTop"`
-	Theme               string `json:"theme"`
-	ShowToastOnComplete bool   `json:"showToastOnComplete"`
-	HotkeyCombination   string `json:"hotkeyCombination"`
-	ExtractPrompt       string `json:"extractPrompt"`
-	TranslatePrompt     string `json:"translatePrompt"`
+	APIKeyOverride       string `json:"apiKeyOverride"`
+	AutoCopyResult       bool   `json:"autoCopyResult"`
+	KeepWindowOnTop      bool   `json:"keepWindowOnTop"`
+	Theme                string `json:"theme"`
+	ShowToastOnComplete  bool   `json:"showToastOnComplete"`
+	HotkeyCombination    string `json:"hotkeyCombination"`
+	ExtractPrompt        string `json:"extractPrompt"`
+	TranslatePrompt      string `json:"translatePrompt"`
+	APIBaseURL           string `json:"apiBaseUrl"`
+	TranslateModel       string `json:"translateModel"`
+	VisionModel          string `json:"visionModel"`
+	VisionAPIBaseURL     string `json:"visionApiBaseUrl"`
+	VisionAPIKeyOverride string `json:"visionApiKeyOverride"`
 }
 
 func (a *App) initSettings() error {
@@ -264,13 +274,45 @@ func (a *App) ensureService() error {
 		return err
 	}
 
-	if a.translationSvc == nil || apiKey != a.currentAPIKey {
+	baseURL := ai.NormalizeBaseURL(a.settings.APIBaseURL)
+	translateModel := strings.TrimSpace(a.settings.TranslateModel)
+	if translateModel == "" {
+		translateModel = ai.DefaultTranslateModel
+	}
+	visionModel := strings.TrimSpace(a.settings.VisionModel)
+	if visionModel == "" {
+		visionModel = ai.DefaultVisionModel
+	}
+	visionAPIKey := strings.TrimSpace(a.settings.VisionAPIKeyOverride)
+	if visionAPIKey == "" {
+		visionAPIKey = apiKey
+	}
+	visionBaseURL := strings.TrimSpace(a.settings.VisionAPIBaseURL)
+	if visionBaseURL == "" {
+		visionBaseURL = baseURL
+	} else {
+		visionBaseURL = ai.NormalizeBaseURL(visionBaseURL)
+	}
+
+	if a.translationSvc == nil || apiKey != a.currentAPIKey || baseURL != a.currentBaseURL || translateModel != a.currentTranslateModel || visionModel != a.currentVisionModel || visionAPIKey != a.currentVisionAPIKey || visionBaseURL != a.currentVisionBaseURL {
 		a.translationSvc = translation.NewService(
-			ai.NewZhipuAIClient(apiKey),
+			ai.NewClient(ai.ClientConfig{
+				APIKey:         apiKey,
+				BaseURL:        baseURL,
+				TranslateModel: translateModel,
+				VisionModel:    visionModel,
+				VisionAPIKey:   visionAPIKey,
+				VisionBaseURL:  visionBaseURL,
+			}),
 			a.settings.ExtractPrompt,
 			a.settings.TranslatePrompt,
 		)
 		a.currentAPIKey = apiKey
+		a.currentBaseURL = baseURL
+		a.currentTranslateModel = translateModel
+		a.currentVisionModel = visionModel
+		a.currentVisionAPIKey = visionAPIKey
+		a.currentVisionBaseURL = visionBaseURL
 	}
 
 	if a.translationSvc != nil {
@@ -471,7 +513,6 @@ func (a *App) showWindow() {
 	runtime.WindowShow(a.ctx)
 }
 
-
 func (a *App) quitApplication() {
 	a.teardownSystemTray()
 	if a.ctx != nil {
@@ -510,14 +551,19 @@ func (a *App) logError(message string) {
 
 func fromConfigSettings(settings config.Settings) SettingsDTO {
 	return SettingsDTO{
-		APIKeyOverride:      settings.APIKeyOverride,
-		AutoCopyResult:      settings.AutoCopyResult,
-		KeepWindowOnTop:     settings.KeepWindowOnTop,
-		Theme:               settings.Theme,
-		ShowToastOnComplete: settings.ShowToastOnComplete,
-		HotkeyCombination:   settings.HotkeyCombination,
-		ExtractPrompt:       settings.ExtractPrompt,
-		TranslatePrompt:     settings.TranslatePrompt,
+		APIKeyOverride:       settings.APIKeyOverride,
+		AutoCopyResult:       settings.AutoCopyResult,
+		KeepWindowOnTop:      settings.KeepWindowOnTop,
+		Theme:                settings.Theme,
+		ShowToastOnComplete:  settings.ShowToastOnComplete,
+		HotkeyCombination:    settings.HotkeyCombination,
+		ExtractPrompt:        settings.ExtractPrompt,
+		TranslatePrompt:      settings.TranslatePrompt,
+		APIBaseURL:           settings.APIBaseURL,
+		TranslateModel:       settings.TranslateModel,
+		VisionModel:          settings.VisionModel,
+		VisionAPIBaseURL:     settings.VisionAPIBaseURL,
+		VisionAPIKeyOverride: settings.VisionAPIKeyOverride,
 	}
 }
 
@@ -542,5 +588,10 @@ func toConfigSettings(dto SettingsDTO) config.Settings {
 	}
 	settings.ExtractPrompt = strings.TrimSpace(dto.ExtractPrompt)
 	settings.TranslatePrompt = strings.TrimSpace(dto.TranslatePrompt)
+	settings.APIBaseURL = strings.TrimSpace(dto.APIBaseURL)
+	settings.TranslateModel = strings.TrimSpace(dto.TranslateModel)
+	settings.VisionModel = strings.TrimSpace(dto.VisionModel)
+	settings.VisionAPIBaseURL = strings.TrimSpace(dto.VisionAPIBaseURL)
+	settings.VisionAPIKeyOverride = strings.TrimSpace(dto.VisionAPIKeyOverride)
 	return settings
 }

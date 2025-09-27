@@ -9,6 +9,11 @@ export namespace main {
 	    hotkeyCombination: string;
 	    extractPrompt: string;
 	    translatePrompt: string;
+	    apiBaseUrl: string;
+	    translateModel: string;
+	    visionModel: string;
+	    visionApiBaseUrl: string;
+	    visionApiKeyOverride: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SettingsDTO(source);
@@ -24,6 +29,11 @@ export namespace main {
 	        this.hotkeyCombination = source["hotkeyCombination"];
 	        this.extractPrompt = source["extractPrompt"];
 	        this.translatePrompt = source["translatePrompt"];
+	        this.apiBaseUrl = source["apiBaseUrl"];
+	        this.translateModel = source["translateModel"];
+	        this.visionModel = source["visionModel"];
+	        this.visionApiBaseUrl = source["visionApiBaseUrl"];
+	        this.visionApiKeyOverride = source["visionApiKeyOverride"];
 	    }
 	}
 	export class UIScreenshotBounds {

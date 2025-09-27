@@ -29,6 +29,9 @@ export interface StatusMessage {
 
 export interface SettingsState {
 	apiKeyOverride: string;
+	apiBaseUrl: string;
+	visionApiKeyOverride: string;
+	visionApiBaseUrl: string;
 	autoCopyResult: boolean;
 	keepWindowOnTop: boolean;
 	theme: string;
@@ -36,7 +39,13 @@ export interface SettingsState {
 	hotkeyCombination: string;
 	extractPrompt: string;
 	translatePrompt: string;
+	translateModel: string;
+	visionModel: string;
 }
+
+export const DEFAULT_API_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+export const DEFAULT_TRANSLATE_MODEL = 'glm-4.5-flash';
+export const DEFAULT_VISION_MODEL = 'glm-4v-flash';
 
 export const DEFAULT_EXTRACT_PROMPT = `你是一个专业的视觉上下文分析专家，专门为高质量的翻译工作提供支持。你的核心任务是深度解读图片，为后续的精准翻译提供所有必要的上下文信息。
 
@@ -83,6 +92,9 @@ export const DEFAULT_TRANSLATE_PROMPT = `你是一个专业的翻译AI，专门�
 export function defaultSettingsState(): SettingsState {
 	return {
 		apiKeyOverride: '',
+		apiBaseUrl: DEFAULT_API_BASE_URL,
+		visionApiKeyOverride: '',
+		visionApiBaseUrl: DEFAULT_API_BASE_URL,
 		autoCopyResult: true,
 		keepWindowOnTop: false,
 		theme: 'system',
@@ -90,6 +102,8 @@ export function defaultSettingsState(): SettingsState {
 		hotkeyCombination: 'Alt+T',
 		extractPrompt: DEFAULT_EXTRACT_PROMPT,
 		translatePrompt: DEFAULT_TRANSLATE_PROMPT,
+		translateModel: DEFAULT_TRANSLATE_MODEL,
+		visionModel: DEFAULT_VISION_MODEL,
 	};
 }
 
@@ -124,6 +138,9 @@ export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 	const defaults = defaultSettingsState();
 	return {
 		apiKeyOverride: converted.apiKeyOverride ?? '',
+		apiBaseUrl: converted.apiBaseUrl || defaults.apiBaseUrl,
+		visionApiKeyOverride: converted.visionApiKeyOverride ?? '',
+		visionApiBaseUrl: converted.visionApiBaseUrl || converted.apiBaseUrl || defaults.visionApiBaseUrl,
 		autoCopyResult: Boolean(converted.autoCopyResult),
 		keepWindowOnTop: Boolean(converted.keepWindowOnTop),
 		theme: converted.theme || defaults.theme,
@@ -131,12 +148,17 @@ export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 		hotkeyCombination: converted.hotkeyCombination || defaults.hotkeyCombination,
 		extractPrompt: converted.extractPrompt || defaults.extractPrompt,
 		translatePrompt: converted.translatePrompt || defaults.translatePrompt,
+		translateModel: converted.translateModel || defaults.translateModel,
+		visionModel: converted.visionModel || defaults.visionModel,
 	};
 }
 
 export function toSettingsPayload(state: SettingsState): main.SettingsDTO {
 	return main.SettingsDTO.createFrom({
 		apiKeyOverride: state.apiKeyOverride,
+		apiBaseUrl: state.apiBaseUrl,
+		visionApiKeyOverride: state.visionApiKeyOverride,
+		visionApiBaseUrl: state.visionApiBaseUrl,
 		autoCopyResult: state.autoCopyResult,
 		keepWindowOnTop: state.keepWindowOnTop,
 		theme: state.theme,
@@ -144,6 +166,8 @@ export function toSettingsPayload(state: SettingsState): main.SettingsDTO {
 		hotkeyCombination: state.hotkeyCombination,
 		extractPrompt: state.extractPrompt,
 		translatePrompt: state.translatePrompt,
+		translateModel: state.translateModel,
+		visionModel: state.visionModel,
 	});
 }
 

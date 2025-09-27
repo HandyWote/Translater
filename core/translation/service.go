@@ -20,7 +20,7 @@ type Service interface {
 
 // ServiceImpl 翻译服务实现
 type ServiceImpl struct {
-	AIClient        *ai.ZhipuAIClient
+	AIClient        *ai.Client
 	extractPrompt   string
 	translatePrompt string
 }
@@ -56,7 +56,7 @@ type TextTranslationResult struct {
 }
 
 // NewService 创建新的翻译服务
-func NewService(aiClient *ai.ZhipuAIClient, extractPrompt, translatePrompt string) Service {
+func NewService(aiClient *ai.Client, extractPrompt, translatePrompt string) Service {
 	return &ServiceImpl{
 		AIClient:        aiClient,
 		extractPrompt:   normalisePrompt(extractPrompt, prompts.DefaultExtractPrompt),

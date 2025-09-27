@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"Translater/core/ai"
 	"Translater/core/config"
 	"Translater/core/hotkey"
-	"Translater/core/prompts"
 	"Translater/core/screenshot"
 	"Translater/core/translation"
 )
@@ -17,12 +17,40 @@ func main() {
 	envFiles := []string{".env", "env"}
 	apiKeyReader := config.NewFileAPIKeyReader(envFiles)
 
-	// 读取API密钥
-	apiKey, err := apiKeyReader.ReadAPIKey()
-	if err != nil {
-		log.Fatal("Could not load API key from any source")
+	settings := config.DefaultSettings()
+	if manager, err := config.NewSettingsManager("Translater"); err != nil {
+		log.Printf("failed to resolve settings path: %v", err)
+	} else if loaded, err := manager.Load(); err != nil {
+		log.Printf("failed to load settings, using defaults: %v", err)
+	} else {
+		settings = loaded
 	}
-	fmt.Println("Successfully read API key from file")
+
+	apiKey := strings.TrimSpace(settings.APIKeyOverride)
+	if apiKey != "" {
+		fmt.Println("Using API key from settings override")
+	} else {
+		// 读取API密钥
+		var err error
+		apiKey, err = apiKeyReader.ReadAPIKey()
+		if err != nil {
+			log.Fatal("Could not load API key from any source")
+		}
+		fmt.Println("Successfully read API key from file")
+	}
+
+	if apiKey == "" {
+		log.Fatal("API key is empty")
+	}
+
+	visionAPIKey := strings.TrimSpace(settings.VisionAPIKeyOverride)
+	if visionAPIKey == "" {
+		visionAPIKey = apiKey
+	}
+	visionBaseURL := strings.TrimSpace(settings.VisionAPIBaseURL)
+	if visionBaseURL == "" {
+		visionBaseURL = settings.APIBaseURL
+	}
 
 	// 创建热键管理器
 	hotkeyManager := hotkey.NewManager()
@@ -31,10 +59,17 @@ func main() {
 	screenshotManager := screenshot.NewManager()
 
 	// 创建AI客户端
-	aiClient := ai.NewZhipuAIClient(apiKey)
+	aiClient := ai.NewClient(ai.ClientConfig{
+		APIKey:         apiKey,
+		BaseURL:        settings.APIBaseURL,
+		TranslateModel: settings.TranslateModel,
+		VisionModel:    settings.VisionModel,
+		VisionAPIKey:   visionAPIKey,
+		VisionBaseURL:  visionBaseURL,
+	})
 
 	// 创建翻译服务
-	translationService := translation.NewService(aiClient, prompts.DefaultExtractPrompt, prompts.DefaultTranslatePrompt)
+	translationService := translation.NewService(aiClient, settings.ExtractPrompt, settings.TranslatePrompt)
 
 	// 设置截图处理函数
 	screenshotManager.SetCaptureHandler(func(startX, startY, endX, endY int) bool {
