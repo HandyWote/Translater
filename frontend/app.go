@@ -47,6 +47,7 @@ type App struct {
 	currentVisionBaseURL  string
 	screenshotLocker      sync.Mutex
 	screenshotActive      bool
+	screenshotDone        chan struct{}
 	hotkeyMgr             *hotkey.Manager
 	hotkeyMutex           sync.Mutex
 	hotkeyLoopOnce        sync.Once
@@ -92,32 +93,51 @@ func (a *App) StartScreenshotTranslation() error {
 		return err
 	}
 
-	a.screenshotLocker.Lock()
-	if a.screenshotActive {
-		a.screenshotLocker.Unlock()
-		return fmt.Errorf("已有截图任务正在进行")
-	}
-	a.screenshotActive = true
-	a.screenshotLocker.Unlock()
-
-	if a.overlayMgr != nil {
-		a.overlayMgr.Close()
-	}
-
-	go func() {
-		a.emit(eventTranslationStarted, map[string]string{"source": "screenshot"})
-		a.emit(eventTranslationProgress, map[string]string{
-			"stage":   "prepare",
-			"message": "请按下鼠标左键拖拽选择需要翻译的区域，按 Esc 取消",
-		})
-		a.screenshotMgr.StartOnce()
+	for {
 		a.screenshotLocker.Lock()
-		a.screenshotActive = false
+		if !a.screenshotActive {
+			done := make(chan struct{})
+			a.screenshotActive = true
+			a.screenshotDone = done
+			a.screenshotLocker.Unlock()
+
+			if a.overlayMgr != nil {
+				a.overlayMgr.Close()
+			}
+
+			go a.runScreenshotCapture(done)
+			return nil
+		}
 		a.screenshotLocker.Unlock()
+
+		if a.screenshotMgr == nil {
+			return fmt.Errorf("截图服务未初始化")
+		}
+		a.screenshotMgr.CancelActiveCapture()
+	}
+}
+
+func (a *App) runScreenshotCapture(done chan struct{}) {
+	defer func() {
+		a.screenshotLocker.Lock()
+		if a.screenshotDone == done {
+			a.screenshotActive = false
+			a.screenshotDone = nil
+		}
+		a.screenshotLocker.Unlock()
+		close(done)
 		a.emit(eventTranslationIdle, nil)
 	}()
 
-	return nil
+	a.emit(eventTranslationStarted, map[string]string{"source": "screenshot"})
+	a.emit(eventTranslationProgress, map[string]string{
+		"stage":   "prepare",
+		"message": "请按下鼠标左键拖拽选择需要翻译的区域，按 Esc 取消",
+	})
+
+	if a.screenshotMgr != nil {
+		a.screenshotMgr.StartOnce()
+	}
 }
 
 // TranslateText 翻译纯文本
@@ -393,13 +413,6 @@ func (a *App) disableHotkey() {
 }
 
 func (a *App) handleHotkeyTrigger() {
-	a.screenshotLocker.Lock()
-	if a.screenshotActive {
-		a.screenshotLocker.Unlock()
-		return
-	}
-	a.screenshotLocker.Unlock()
-
 	if err := a.StartScreenshotTranslation(); err != nil {
 		a.logError(fmt.Sprintf("热键触发截图失败: %v", err))
 	}
