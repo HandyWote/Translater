@@ -5,6 +5,7 @@ package overlay
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"unicode/utf16"
@@ -80,6 +81,20 @@ func (m *Manager) Close() {
 	}
 }
 
+// Update updates text of the current overlay window.
+func (m *Manager) Update(text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.current == nil {
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		return fmt.Errorf("overlay window is not active")
+	}
+	return m.current.UpdateText(text)
+}
+
 type overlayWindow struct {
 	rect      Rect
 	textUTF16 []uint16
@@ -111,6 +126,22 @@ func newOverlayWindow(text string, rect Rect) (*overlayWindow, error) {
 	}
 
 	return ow, nil
+}
+
+func (ow *overlayWindow) UpdateText(text string) error {
+	if ow == nil {
+		return fmt.Errorf("overlay window is nil")
+	}
+	if ow.hwnd == 0 {
+		return fmt.Errorf("overlay window not initialized")
+	}
+
+	ow.textUTF16 = append(utf16.Encode([]rune(text)), 0)
+	ow.fontRectWidth = 0
+	ow.fontRectHeight = 0
+	win.InvalidateRect(ow.hwnd, nil, true)
+	win.UpdateWindow(ow.hwnd)
+	return nil
 }
 
 func (ow *overlayWindow) Close() {

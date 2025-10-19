@@ -21,6 +21,7 @@ const (
 	eventTranslationStarted  = "translation:started"
 	eventTranslationProgress = "translation:progress"
 	eventTranslationResult   = "translation:result"
+	eventTranslationDelta    = "translation:delta"
 	eventTranslationError    = "translation:error"
 	eventTranslationIdle     = "translation:idle"
 	eventTranslationCopied   = "translation:copied"
@@ -45,6 +46,12 @@ type App struct {
 	currentVisionModel    string
 	currentVisionAPIKey   string
 	currentVisionBaseURL  string
+	streamMutex          sync.Mutex
+	streamActive         bool
+	streamSource         string
+	streamRect           overlay.Rect
+	streamHasRect        bool
+	streamOverlayVisible bool
 	screenshotLocker      sync.Mutex
 	screenshotActive      bool
 	screenshotDone        chan struct{}
@@ -147,6 +154,15 @@ func (a *App) TranslateText(input string) (*UITranslationResult, error) {
 		return nil, fmt.Errorf("请输入要翻译的内容")
 	}
 
+	streamEnabled := a.settings.EnableStreamOutput
+	var streamSuccess bool
+	if streamEnabled {
+		a.beginStream("manual", nil)
+		defer func() {
+			a.endStream(!streamSuccess)
+		}()
+	}
+
 	if err := a.ensureService(); err != nil {
 		a.emit(eventTranslationError, map[string]string{
 			"stage":   "init",
@@ -175,6 +191,7 @@ func (a *App) TranslateText(input string) (*UITranslationResult, error) {
 
 	a.emit(eventTranslationResult, uiResult)
 	a.postProcessTranslation(uiResult.TranslatedText)
+	streamSuccess = true
 	return uiResult, nil
 }
 
@@ -256,6 +273,7 @@ type SettingsDTO struct {
 	KeepWindowOnTop      bool   `json:"keepWindowOnTop"`
 	Theme                string `json:"theme"`
 	ShowToastOnComplete  bool   `json:"showToastOnComplete"`
+	EnableStreamOutput   bool   `json:"enableStreamOutput"`
 	HotkeyCombination    string `json:"hotkeyCombination"`
 	ExtractPrompt        string `json:"extractPrompt"`
 	TranslatePrompt      string `json:"translatePrompt"`
@@ -264,6 +282,7 @@ type SettingsDTO struct {
 	VisionModel          string `json:"visionModel"`
 	VisionAPIBaseURL     string `json:"visionApiBaseUrl"`
 	VisionAPIKeyOverride string `json:"visionApiKeyOverride"`
+	UseVisionForTranslation bool `json:"useVisionForTranslation"`
 }
 
 func (a *App) initSettings() error {
@@ -314,6 +333,11 @@ func (a *App) ensureService() error {
 		visionBaseURL = ai.NormalizeBaseURL(visionBaseURL)
 	}
 
+	options := translation.Options{
+		Stream:                a.settings.EnableStreamOutput,
+		UseVisionForTranslation: a.settings.UseVisionForTranslation,
+	}
+
 	if a.translationSvc == nil || apiKey != a.currentAPIKey || baseURL != a.currentBaseURL || translateModel != a.currentTranslateModel || visionModel != a.currentVisionModel || visionAPIKey != a.currentVisionAPIKey || visionBaseURL != a.currentVisionBaseURL {
 		a.translationSvc = translation.NewService(
 			ai.NewClient(ai.ClientConfig{
@@ -326,6 +350,7 @@ func (a *App) ensureService() error {
 			}),
 			a.settings.ExtractPrompt,
 			a.settings.TranslatePrompt,
+			options,
 		)
 		a.currentAPIKey = apiKey
 		a.currentBaseURL = baseURL
@@ -337,6 +362,8 @@ func (a *App) ensureService() error {
 
 	if a.translationSvc != nil {
 		a.translationSvc.UpdatePrompts(a.settings.ExtractPrompt, a.settings.TranslatePrompt)
+		a.translationSvc.UpdateOptions(options)
+		a.translationSvc.SetStreamHandler(a.handleStreamDelta)
 	}
 
 	if a.screenshotMgr == nil {
@@ -418,7 +445,44 @@ func (a *App) handleHotkeyTrigger() {
 	}
 }
 
+func (a *App) computeOverlayRect(startX, startY, endX, endY int) overlay.Rect {
+	left := startX
+	right := endX
+	if left > right {
+		left, right = right, left
+	}
+	top := startY
+	bottom := endY
+	if top > bottom {
+		top, bottom = bottom, top
+	}
+	width := right - left
+	height := bottom - top
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
+	return overlay.Rect{
+		Left:   left,
+		Top:    top,
+		Width:  width,
+		Height: height,
+	}
+}
+
 func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
+	streamEnabled := a.settings.EnableStreamOutput
+	var streamSuccess bool
+	if streamEnabled {
+		rect := a.computeOverlayRect(startX, startY, endX, endY)
+		a.beginStream("screenshot", &rect)
+		defer func() {
+			a.endStream(!streamSuccess)
+		}()
+	}
+
 	a.emit(eventTranslationProgress, map[string]string{
 		"stage":   "ocr",
 		"message": "正在识别文字…",
@@ -491,10 +555,20 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			Width:  uiResult.Bounds.Width,
 			Height: uiResult.Bounds.Height,
 		}
-		if err := a.overlayMgr.Show(uiResult.TranslatedText, rect); err != nil {
-			a.logError(fmt.Sprintf("展示翻译浮窗失败: %v", err))
+		if streamEnabled && a.isStreamOverlayActive() {
+			if err := a.overlayMgr.Update(uiResult.TranslatedText); err != nil {
+				a.logError(fmt.Sprintf("更新流式翻译浮窗失败: %v", err))
+				if err := a.overlayMgr.Show(uiResult.TranslatedText, rect); err != nil {
+					a.logError(fmt.Sprintf("展示翻译浮窗失败: %v", err))
+				}
+			}
+		} else {
+			if err := a.overlayMgr.Show(uiResult.TranslatedText, rect); err != nil {
+				a.logError(fmt.Sprintf("展示翻译浮窗失败: %v", err))
+			}
 		}
 	}
+	streamSuccess = true
 	return true
 }
 
@@ -510,6 +584,91 @@ func (a *App) postProcessTranslation(translated string) {
 		return
 	}
 	a.emit(eventTranslationCopied, map[string]string{"message": "翻译结果已复制到剪贴板"})
+}
+
+func (a *App) beginStream(source string, rect *overlay.Rect) {
+	a.streamMutex.Lock()
+	defer a.streamMutex.Unlock()
+
+	a.streamActive = true
+	a.streamSource = source
+	if rect != nil {
+		a.streamRect = *rect
+		a.streamHasRect = true
+	} else {
+		a.streamRect = overlay.Rect{}
+		a.streamHasRect = false
+	}
+	a.streamOverlayVisible = false
+}
+
+func (a *App) endStream(closeOverlay bool) {
+	a.streamMutex.Lock()
+	wasActive := a.streamActive
+	a.streamActive = false
+	a.streamSource = ""
+	a.streamHasRect = false
+	a.streamOverlayVisible = false
+	a.streamMutex.Unlock()
+
+	if closeOverlay && wasActive && a.overlayMgr != nil {
+		a.overlayMgr.Close()
+	}
+}
+
+func (a *App) handleStreamDelta(stage string, content string) {
+	payload := map[string]string{
+		"stage":   stage,
+		"content": content,
+	}
+
+	a.streamMutex.Lock()
+	source := a.streamSource
+	hasRect := a.streamHasRect
+	rect := a.streamRect
+	overlayVisible := a.streamOverlayVisible
+	a.streamMutex.Unlock()
+
+	if source != "" {
+		payload["source"] = source
+	}
+	a.emit(eventTranslationDelta, payload)
+
+	if source != "screenshot" || !hasRect || a.overlayMgr == nil {
+		return
+	}
+
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+
+	if !overlayVisible {
+		if err := a.overlayMgr.Show(content, rect); err != nil {
+			a.logError(fmt.Sprintf("展示流式翻译浮窗失败: %v", err))
+			return
+		}
+		a.streamMutex.Lock()
+		a.streamOverlayVisible = true
+		a.streamMutex.Unlock()
+		return
+	}
+
+	if err := a.overlayMgr.Update(content); err != nil {
+		a.logError(fmt.Sprintf("更新流式翻译浮窗失败: %v", err))
+		if err := a.overlayMgr.Show(content, rect); err != nil {
+			a.logError(fmt.Sprintf("展示流式翻译浮窗失败: %v", err))
+			return
+		}
+		a.streamMutex.Lock()
+		a.streamOverlayVisible = true
+		a.streamMutex.Unlock()
+	}
+}
+
+func (a *App) isStreamOverlayActive() bool {
+	a.streamMutex.Lock()
+	defer a.streamMutex.Unlock()
+	return a.streamOverlayVisible
 }
 
 func (a *App) applyWindowPreferences() {
@@ -569,6 +728,7 @@ func fromConfigSettings(settings config.Settings) SettingsDTO {
 		KeepWindowOnTop:      settings.KeepWindowOnTop,
 		Theme:                settings.Theme,
 		ShowToastOnComplete:  settings.ShowToastOnComplete,
+		EnableStreamOutput:   settings.EnableStreamOutput,
 		HotkeyCombination:    settings.HotkeyCombination,
 		ExtractPrompt:        settings.ExtractPrompt,
 		TranslatePrompt:      settings.TranslatePrompt,
@@ -577,6 +737,7 @@ func fromConfigSettings(settings config.Settings) SettingsDTO {
 		VisionModel:          settings.VisionModel,
 		VisionAPIBaseURL:     settings.VisionAPIBaseURL,
 		VisionAPIKeyOverride: settings.VisionAPIKeyOverride,
+		UseVisionForTranslation: settings.UseVisionForTranslation,
 	}
 }
 
@@ -589,6 +750,7 @@ func toConfigSettings(dto SettingsDTO) config.Settings {
 		settings.Theme = dto.Theme
 	}
 	settings.ShowToastOnComplete = dto.ShowToastOnComplete
+	settings.EnableStreamOutput = dto.EnableStreamOutput
 	combo := strings.TrimSpace(dto.HotkeyCombination)
 	if combo == "" {
 		settings.HotkeyCombination = config.DefaultSettings().HotkeyCombination
@@ -606,5 +768,6 @@ func toConfigSettings(dto SettingsDTO) config.Settings {
 	settings.VisionModel = strings.TrimSpace(dto.VisionModel)
 	settings.VisionAPIBaseURL = strings.TrimSpace(dto.VisionAPIBaseURL)
 	settings.VisionAPIKeyOverride = strings.TrimSpace(dto.VisionAPIKeyOverride)
+	settings.UseVisionForTranslation = dto.UseVisionForTranslation
 	return settings
 }

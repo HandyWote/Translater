@@ -19,6 +19,7 @@ type Settings struct {
 	KeepWindowOnTop      bool   `json:"keepWindowOnTop"`
 	Theme                string `json:"theme"`
 	ShowToastOnComplete  bool   `json:"showToastOnComplete"`
+	EnableStreamOutput   bool   `json:"enableStreamOutput"`
 	HotkeyCombination    string `json:"hotkeyCombination"`
 	ExtractPrompt        string `json:"extractPrompt"`
 	TranslatePrompt      string `json:"translatePrompt"`
@@ -27,6 +28,7 @@ type Settings struct {
 	VisionModel          string `json:"visionModel"`
 	VisionAPIBaseURL     string `json:"visionApiBaseUrl"`
 	VisionAPIKeyOverride string `json:"visionApiKeyOverride"`
+	UseVisionForTranslation bool `json:"useVisionForTranslation"`
 }
 
 // DefaultSettings 返回默认配置
@@ -36,6 +38,7 @@ func DefaultSettings() Settings {
 		KeepWindowOnTop:     false,
 		Theme:               "system",
 		ShowToastOnComplete: true,
+		EnableStreamOutput:  false,
 		HotkeyCombination:   "Alt+T",
 		ExtractPrompt:       prompts.DefaultExtractPrompt,
 		TranslatePrompt:     prompts.DefaultTranslatePrompt,
@@ -43,6 +46,7 @@ func DefaultSettings() Settings {
 		TranslateModel:      ai.DefaultTranslateModel,
 		VisionModel:         ai.DefaultVisionModel,
 		VisionAPIBaseURL:    ai.DefaultBaseURL,
+		UseVisionForTranslation: false,
 	}
 }
 

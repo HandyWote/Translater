@@ -69,7 +69,15 @@ func main() {
 	})
 
 	// 创建翻译服务
-	translationService := translation.NewService(aiClient, settings.ExtractPrompt, settings.TranslatePrompt)
+	translationService := translation.NewService(
+		aiClient,
+		settings.ExtractPrompt,
+		settings.TranslatePrompt,
+		translation.Options{
+			Stream:                settings.EnableStreamOutput,
+			UseVisionForTranslation: settings.UseVisionForTranslation,
+		},
+	)
 
 	// 设置截图处理函数
 	screenshotManager.SetCaptureHandler(func(startX, startY, endX, endY int) bool {

@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -187,6 +188,27 @@ type APIError struct {
 	Type    string `json:"type"`
 }
 
+type streamChunk struct {
+	ID      string          `json:"id"`
+	Object  string          `json:"object"`
+	Created int64           `json:"created"`
+	Model   string          `json:"model"`
+	Choices []streamChoice  `json:"choices"`
+	Usage   *Usage          `json:"usage,omitempty"`
+	Error   *APIError       `json:"error,omitempty"`
+}
+
+type streamChoice struct {
+	Index        int              `json:"index"`
+	Delta        streamDelta      `json:"delta"`
+	FinishReason string           `json:"finish_reason"`
+}
+
+type streamDelta struct {
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
+}
+
 func (c *Client) post(request ZhipuAIRequest, target endpoint) (*ZhipuAIResponse, error) {
 	url := c.chatCompletionsURL(target.base)
 
@@ -232,6 +254,159 @@ func (c *Client) post(request ZhipuAIRequest, target endpoint) (*ZhipuAIResponse
 	return &response, nil
 }
 
+func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(string)) (*ZhipuAIResponse, error) {
+	url := c.chatCompletionsURL(target.base)
+	request.Stream = true
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if target.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+target.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+
+	var (
+		builder      strings.Builder
+		final        ZhipuAIResponse
+		finishReason string
+		sawChunk     bool
+		dataBuffer   strings.Builder
+	)
+
+	processData := func(data string) error {
+		if strings.TrimSpace(data) == "" {
+			return nil
+		}
+		if data == "[DONE]" {
+			return io.EOF
+		}
+
+		var chunk streamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return fmt.Errorf("failed to unmarshal stream chunk: %v (raw: %s)", err, data)
+		}
+		if chunk.Error != nil {
+			return fmt.Errorf("API error: %s - %s", chunk.Error.Code, chunk.Error.Message)
+		}
+		if chunk.ID != "" && final.ID == "" {
+			final.ID = chunk.ID
+		}
+		if chunk.Object != "" && final.Object == "" {
+			final.Object = chunk.Object
+		}
+		if chunk.Created != 0 && final.Created == 0 {
+			final.Created = chunk.Created
+		}
+		if chunk.Usage != nil {
+			final.Usage = *chunk.Usage
+		}
+
+		for _, choice := range chunk.Choices {
+			text := streamContentToString(choice.Delta.Content)
+			if text != "" {
+				builder.WriteString(text)
+				if onDelta != nil {
+					onDelta(builder.String())
+				}
+			}
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
+		}
+
+		sawChunk = true
+		return nil
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		line = strings.TrimRight(line, "\r")
+
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "data:") {
+			segment := strings.TrimSpace(line[len("data:"):])
+			if segment == "[DONE]" {
+				if err := processData(segment); err == io.EOF {
+					break
+				}
+				break
+			}
+			if dataBuffer.Len() > 0 {
+				dataBuffer.WriteByte('\n')
+			}
+			dataBuffer.WriteString(segment)
+			continue
+		}
+
+		if strings.TrimSpace(line) == "" {
+			if dataBuffer.Len() == 0 {
+				continue
+			}
+			payload := dataBuffer.String()
+			dataBuffer.Reset()
+			if err := processData(payload); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return nil, err
+			}
+			continue
+		}
+	}
+
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		return nil, fmt.Errorf("failed to read stream: %v", err)
+	}
+
+	if dataBuffer.Len() > 0 {
+		if err := processData(dataBuffer.String()); err != nil && err != io.EOF {
+			return nil, err
+		}
+	}
+
+	if !sawChunk {
+		return nil, fmt.Errorf("stream response empty")
+	}
+
+	final.Choices = []Choice{
+		{
+			Index: 0,
+			Message: Message{
+				Role:    "assistant",
+				Content: builder.String(),
+			},
+			FinishReason: finishReason,
+		},
+	}
+
+	return &final, nil
+}
+
 // Translate 发送文本消息至聊天接口
 func (c *Client) Translate(userMessage string, systemPrompt string) (*ZhipuAIResponse, error) {
 	messages := []Message{}
@@ -258,8 +433,8 @@ func (c *Client) Translate(userMessage string, systemPrompt string) (*ZhipuAIRes
 	return c.post(request, c.translate)
 }
 
-// ImageToWords 直接从图像字节数据提取文字
-func (c *Client) ImageToWords(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
+// TranslateStream 以流式方式发送文本消息并回调增量内容
+func (c *Client) TranslateStream(userMessage string, systemPrompt string, onDelta func(string)) (*ZhipuAIResponse, error) {
 	messages := []Message{}
 
 	if systemPrompt != "" {
@@ -269,11 +444,73 @@ func (c *Client) ImageToWords(userMessage string, imageData []byte, mimeType str
 		})
 	}
 
-	content := []ContentItem{
-		{
+	messages = append(messages, Message{
+		Role:    "user",
+		Content: userMessage,
+	})
+
+	request := ZhipuAIRequest{
+		Model:       c.translate.model,
+		Messages:    messages,
+		Temperature: 1,
+		TopP:        0.9,
+	}
+
+	return c.stream(request, c.translate, onDelta)
+}
+
+// ImageToWords 直接从图像字节数据提取文字
+func (c *Client) ImageToWords(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
+	request := ZhipuAIRequest{
+		Model:       c.vision.model,
+		Messages:    c.buildVisionMessages(userMessage, imageData, mimeType, systemPrompt),
+		Temperature: 0.7,
+		TopP:        0.9,
+	}
+
+	return c.post(request, c.vision)
+}
+
+// ImageToTranslation 使用视觉模型直接生成翻译结果
+func (c *Client) ImageToTranslation(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
+	request := ZhipuAIRequest{
+		Model:       c.vision.model,
+		Messages:    c.buildVisionMessages(userMessage, imageData, mimeType, systemPrompt),
+		Temperature: 0.7,
+		TopP:        0.9,
+	}
+
+	return c.post(request, c.vision)
+}
+
+// ImageToTranslationStream 使用视觉模型流式输出翻译结果
+func (c *Client) ImageToTranslationStream(userMessage string, imageData []byte, mimeType string, systemPrompt string, onDelta func(string)) (*ZhipuAIResponse, error) {
+	request := ZhipuAIRequest{
+		Model:       c.vision.model,
+		Messages:    c.buildVisionMessages(userMessage, imageData, mimeType, systemPrompt),
+		Temperature: 0.7,
+		TopP:        0.9,
+	}
+
+	return c.stream(request, c.vision, onDelta)
+}
+
+func (c *Client) buildVisionMessages(userMessage string, imageData []byte, mimeType string, systemPrompt string) []Message {
+	messages := []Message{}
+
+	if systemPrompt != "" {
+		messages = append(messages, Message{
+			Role:    "system",
+			Content: systemPrompt,
+		})
+	}
+
+	content := []ContentItem{}
+	if strings.TrimSpace(userMessage) != "" {
+		content = append(content, ContentItem{
 			Type: "text",
 			Text: userMessage,
-		},
+		})
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(imageData)
@@ -293,12 +530,27 @@ func (c *Client) ImageToWords(userMessage string, imageData []byte, mimeType str
 		Content: content,
 	})
 
-	request := ZhipuAIRequest{
-		Model:       c.vision.model,
-		Messages:    messages,
-		Temperature: 0.7,
-		TopP:        0.9,
-	}
+	return messages
+}
 
-	return c.post(request, c.vision)
+func streamContentToString(content interface{}) string {
+	switch value := content.(type) {
+	case string:
+		return value
+	case []interface{}:
+		var builder strings.Builder
+		for _, item := range value {
+			switch piece := item.(type) {
+			case map[string]interface{}:
+				if pieceType, ok := piece["type"].(string); ok && pieceType == "text" {
+					if text, ok := piece["text"].(string); ok {
+						builder.WriteString(text)
+					}
+				}
+			}
+		}
+		return builder.String()
+	default:
+		return ""
+	}
 }

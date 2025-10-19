@@ -16,6 +16,8 @@ type Service interface {
 	ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error)
 	TranslateText(input string) (*TextTranslationResult, error)
 	UpdatePrompts(extract, translate string)
+	UpdateOptions(opts Options)
+	SetStreamHandler(handler StreamHandler)
 }
 
 // ServiceImpl 翻译服务实现
@@ -23,6 +25,17 @@ type ServiceImpl struct {
 	AIClient        *ai.Client
 	extractPrompt   string
 	translatePrompt string
+	options         Options
+	streamHandler   StreamHandler
+}
+
+// StreamHandler 用于接收翻译过程中的流式文本
+type StreamHandler func(stage string, content string)
+
+// Options 控制翻译服务行为
+type Options struct {
+	Stream                bool
+	UseVisionForTranslation bool
 }
 
 // ScreenshotTranslationResult 包含一次截图翻译的详情
@@ -56,11 +69,12 @@ type TextTranslationResult struct {
 }
 
 // NewService 创建新的翻译服务
-func NewService(aiClient *ai.Client, extractPrompt, translatePrompt string) Service {
+func NewService(aiClient *ai.Client, extractPrompt, translatePrompt string, opts Options) Service {
 	return &ServiceImpl{
 		AIClient:        aiClient,
 		extractPrompt:   normalisePrompt(extractPrompt, prompts.DefaultExtractPrompt),
 		translatePrompt: normalisePrompt(translatePrompt, prompts.DefaultTranslatePrompt),
+		options:         opts,
 	}
 }
 
@@ -166,8 +180,43 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 		return result, nil
 	}
 
+	streamEnabled := s.options.Stream && s.streamHandler != nil
+
 	// 翻译阶段
-	translateResponse, err := s.AIClient.Translate(extractedText, s.translatePrompt)
+	var translateResponse *ai.ZhipuAIResponse
+	if s.options.UseVisionForTranslation {
+		visionPrompt := s.buildVisionTranslationMessage(extractedText)
+		if streamEnabled {
+			translateResponse, err = s.AIClient.ImageToTranslationStream(
+				visionPrompt,
+				imageData,
+				"image/png",
+				"",
+				func(text string) {
+					s.emitStream("translate", text)
+				},
+			)
+		} else {
+			translateResponse, err = s.AIClient.ImageToTranslation(
+				visionPrompt,
+				imageData,
+				"image/png",
+				"",
+			)
+		}
+	} else {
+		if streamEnabled {
+			translateResponse, err = s.AIClient.TranslateStream(
+				extractedText,
+				s.translatePrompt,
+				func(text string) {
+					s.emitStream("translate", text)
+				},
+			)
+		} else {
+			translateResponse, err = s.AIClient.Translate(extractedText, s.translatePrompt)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("翻译失败: %w", err)
 	}
@@ -198,7 +247,21 @@ func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error
 	}
 
 	started := time.Now()
-	translateResponse, err := s.AIClient.Translate(input, s.translatePrompt)
+	streamEnabled := s.options.Stream && s.streamHandler != nil
+
+	var translateResponse *ai.ZhipuAIResponse
+	var err error
+	if streamEnabled {
+		translateResponse, err = s.AIClient.TranslateStream(
+			input,
+			s.translatePrompt,
+			func(text string) {
+				s.emitStream("translate", text)
+			},
+		)
+	} else {
+		translateResponse, err = s.AIClient.Translate(input, s.translatePrompt)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("翻译失败: %w", err)
 	}
@@ -224,6 +287,36 @@ func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error
 func (s *ServiceImpl) UpdatePrompts(extract, translate string) {
 	s.extractPrompt = normalisePrompt(extract, prompts.DefaultExtractPrompt)
 	s.translatePrompt = normalisePrompt(translate, prompts.DefaultTranslatePrompt)
+}
+
+// UpdateOptions 更新服务运行参数
+func (s *ServiceImpl) UpdateOptions(opts Options) {
+	s.options = opts
+}
+
+// SetStreamHandler 配置流式输出回调
+func (s *ServiceImpl) SetStreamHandler(handler StreamHandler) {
+	s.streamHandler = handler
+}
+
+func (s *ServiceImpl) emitStream(stage, content string) {
+	if !s.options.Stream || s.streamHandler == nil {
+		return
+	}
+	s.streamHandler(stage, content)
+}
+
+func (s *ServiceImpl) buildVisionTranslationMessage(extractedText string) string {
+	var builder strings.Builder
+	builder.WriteString(s.translatePrompt)
+
+	trimmed := strings.TrimSpace(extractedText)
+	if trimmed != "" {
+		builder.WriteString("\n\n以下是图像解析得到的原文 JSON：\n")
+		builder.WriteString(trimmed)
+	}
+	builder.WriteString("\n\n请结合图像内容直接输出翻译后的文字，不要包含任何额外说明。")
+	return builder.String()
 }
 
 func messageContentToString(content interface{}) (string, error) {
