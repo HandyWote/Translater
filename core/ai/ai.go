@@ -189,19 +189,19 @@ type APIError struct {
 }
 
 type streamChunk struct {
-	ID      string          `json:"id"`
-	Object  string          `json:"object"`
-	Created int64           `json:"created"`
-	Model   string          `json:"model"`
-	Choices []streamChoice  `json:"choices"`
-	Usage   *Usage          `json:"usage,omitempty"`
-	Error   *APIError       `json:"error,omitempty"`
+	ID      string         `json:"id"`
+	Object  string         `json:"object"`
+	Created int64          `json:"created"`
+	Model   string         `json:"model"`
+	Choices []streamChoice `json:"choices"`
+	Usage   *Usage         `json:"usage,omitempty"`
+	Error   *APIError      `json:"error,omitempty"`
 }
 
 type streamChoice struct {
-	Index        int              `json:"index"`
-	Delta        streamDelta      `json:"delta"`
-	FinishReason string           `json:"finish_reason"`
+	Index        int         `json:"index"`
+	Delta        streamDelta `json:"delta"`
+	FinishReason string      `json:"finish_reason"`
 }
 
 type streamDelta struct {

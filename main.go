@@ -74,7 +74,7 @@ func main() {
 		settings.ExtractPrompt,
 		settings.TranslatePrompt,
 		translation.Options{
-			Stream:                settings.EnableStreamOutput,
+			Stream:                  settings.EnableStreamOutput,
 			UseVisionForTranslation: settings.UseVisionForTranslation,
 		},
 	)

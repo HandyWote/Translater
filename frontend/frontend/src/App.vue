@@ -3,7 +3,7 @@ import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
 import TranslationPanel from './components/TranslationPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
-import type {SettingsState, StatusMessage, TranslationResult} from './types';
+import type {SettingsState, StatusMessage, TranslationResult, TranslationSource} from './types';
 import {defaultSettingsState, formatTimestamp, mapSettings, mapTranslationResult, toSettingsPayload} from './types';
 import {GetSettings, SaveSettings, StartScreenshotTranslation} from '../wailsjs/go/main/App';
 import {EventsOff, EventsOn, WindowSetDarkTheme, WindowSetLightTheme, WindowSetSystemDefaultTheme} from '../wailsjs/runtime/runtime';
@@ -14,6 +14,8 @@ const activeTab = ref<ActiveTab>('translate');
 const history = ref<TranslationResult[]>([]);
 const currentResult = ref<TranslationResult | null>(null);
 const statusMessage = ref<StatusMessage | null>(null);
+const liveTranslatedText = ref('');
+const liveStreamSource = ref<TranslationSource | null>(null);
 const isBusy = ref(false);
 const apiKeyMissing = ref(false);
 const settings = ref<SettingsState>(defaultSettingsState());
@@ -33,6 +35,11 @@ function pushToast(message: string, duration = 2800) {
 	window.setTimeout(() => {
 		toasts.value = toasts.value.filter((item) => item.id !== id);
 	}, duration);
+}
+
+function resetStreaming() {
+	liveTranslatedText.value = '';
+	liveStreamSource.value = null;
 }
 
 function applyTheme(theme: string) {
@@ -67,6 +74,7 @@ function addHistoryEntry(entry: TranslationResult) {
 }
 
 function handleTranslationResult(payload: any) {
+	resetStreaming();
 	const mapped = mapTranslationResult(payload);
 	currentResult.value = mapped;
 	addHistoryEntry(mapped);
@@ -79,6 +87,7 @@ function handleTranslationResult(payload: any) {
 }
 
 function handleTranslationError(stage: string, message: string) {
+	resetStreaming();
 	isBusy.value = false;
 	statusMessage.value = {stage, message};
 	pushToast(message || '翻译失败');
@@ -126,6 +135,7 @@ async function saveSettings(nextSettings: SettingsState) {
 }
 
 function handleHistorySelect(entry: TranslationResult) {
+	resetStreaming();
 	currentResult.value = entry;
 	activeTab.value = 'translate';
 }
@@ -137,8 +147,9 @@ const headerStatus = computed(() => {
 	return statusMessage.value.message;
 });
 
-onMounted(async () => {
+	onMounted(async () => {
 	registerEvent('translation:started', (payload?: Record<string, any>) => {
+		resetStreaming();
 		isBusy.value = true;
 		const source = payload?.source || 'translation';
 		statusMessage.value = {stage: source, message: source === 'screenshot' ? '等待用户选择截图区域…' : '开始翻译…'};
@@ -156,7 +167,18 @@ onMounted(async () => {
 		const message = payload?.message || '处理失败';
 		handleTranslationError(stage, message);
 	});
+	registerEvent('translation:delta', (payload?: Record<string, any>) => {
+		const content = typeof payload?.content === 'string' ? payload.content : '';
+		const source = payload?.source as TranslationSource | undefined;
+		liveTranslatedText.value = content;
+		if (source) {
+			liveStreamSource.value = source;
+		} else if (!liveStreamSource.value) {
+			liveStreamSource.value = 'manual';
+		}
+	});
 	registerEvent('translation:idle', () => {
+		resetStreaming();
 		isBusy.value = false;
 	});
 	registerEvent('translation:copied', (payload?: Record<string, any>) => {
@@ -228,6 +250,8 @@ const lastUpdatedText = computed(() => {
 				:is-busy="isBusy"
 				:status-message="statusMessage"
 				:api-key-missing="apiKeyMissing"
+				:streamed-text="liveTranslatedText"
+				:stream-source="liveStreamSource"
 				@start-screenshot="requestScreenshot"
 			/>
 			<HistoryPanel

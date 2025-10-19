@@ -46,12 +46,12 @@ type App struct {
 	currentVisionModel    string
 	currentVisionAPIKey   string
 	currentVisionBaseURL  string
-	streamMutex          sync.Mutex
-	streamActive         bool
-	streamSource         string
-	streamRect           overlay.Rect
-	streamHasRect        bool
-	streamOverlayVisible bool
+	streamMutex           sync.Mutex
+	streamActive          bool
+	streamSource          string
+	streamRect            overlay.Rect
+	streamHasRect         bool
+	streamOverlayVisible  bool
 	screenshotLocker      sync.Mutex
 	screenshotActive      bool
 	screenshotDone        chan struct{}
@@ -268,21 +268,21 @@ type UIScreenshotBounds struct {
 
 // SettingsDTO 前端-后端交互的配置载体
 type SettingsDTO struct {
-	APIKeyOverride       string `json:"apiKeyOverride"`
-	AutoCopyResult       bool   `json:"autoCopyResult"`
-	KeepWindowOnTop      bool   `json:"keepWindowOnTop"`
-	Theme                string `json:"theme"`
-	ShowToastOnComplete  bool   `json:"showToastOnComplete"`
-	EnableStreamOutput   bool   `json:"enableStreamOutput"`
-	HotkeyCombination    string `json:"hotkeyCombination"`
-	ExtractPrompt        string `json:"extractPrompt"`
-	TranslatePrompt      string `json:"translatePrompt"`
-	APIBaseURL           string `json:"apiBaseUrl"`
-	TranslateModel       string `json:"translateModel"`
-	VisionModel          string `json:"visionModel"`
-	VisionAPIBaseURL     string `json:"visionApiBaseUrl"`
-	VisionAPIKeyOverride string `json:"visionApiKeyOverride"`
-	UseVisionForTranslation bool `json:"useVisionForTranslation"`
+	APIKeyOverride          string `json:"apiKeyOverride"`
+	AutoCopyResult          bool   `json:"autoCopyResult"`
+	KeepWindowOnTop         bool   `json:"keepWindowOnTop"`
+	Theme                   string `json:"theme"`
+	ShowToastOnComplete     bool   `json:"showToastOnComplete"`
+	EnableStreamOutput      bool   `json:"enableStreamOutput"`
+	HotkeyCombination       string `json:"hotkeyCombination"`
+	ExtractPrompt           string `json:"extractPrompt"`
+	TranslatePrompt         string `json:"translatePrompt"`
+	APIBaseURL              string `json:"apiBaseUrl"`
+	TranslateModel          string `json:"translateModel"`
+	VisionModel             string `json:"visionModel"`
+	VisionAPIBaseURL        string `json:"visionApiBaseUrl"`
+	VisionAPIKeyOverride    string `json:"visionApiKeyOverride"`
+	UseVisionForTranslation bool   `json:"useVisionForTranslation"`
 }
 
 func (a *App) initSettings() error {
@@ -334,7 +334,7 @@ func (a *App) ensureService() error {
 	}
 
 	options := translation.Options{
-		Stream:                a.settings.EnableStreamOutput,
+		Stream:                  a.settings.EnableStreamOutput,
 		UseVisionForTranslation: a.settings.UseVisionForTranslation,
 	}
 
@@ -723,20 +723,20 @@ func (a *App) logError(message string) {
 
 func fromConfigSettings(settings config.Settings) SettingsDTO {
 	return SettingsDTO{
-		APIKeyOverride:       settings.APIKeyOverride,
-		AutoCopyResult:       settings.AutoCopyResult,
-		KeepWindowOnTop:      settings.KeepWindowOnTop,
-		Theme:                settings.Theme,
-		ShowToastOnComplete:  settings.ShowToastOnComplete,
-		EnableStreamOutput:   settings.EnableStreamOutput,
-		HotkeyCombination:    settings.HotkeyCombination,
-		ExtractPrompt:        settings.ExtractPrompt,
-		TranslatePrompt:      settings.TranslatePrompt,
-		APIBaseURL:           settings.APIBaseURL,
-		TranslateModel:       settings.TranslateModel,
-		VisionModel:          settings.VisionModel,
-		VisionAPIBaseURL:     settings.VisionAPIBaseURL,
-		VisionAPIKeyOverride: settings.VisionAPIKeyOverride,
+		APIKeyOverride:          settings.APIKeyOverride,
+		AutoCopyResult:          settings.AutoCopyResult,
+		KeepWindowOnTop:         settings.KeepWindowOnTop,
+		Theme:                   settings.Theme,
+		ShowToastOnComplete:     settings.ShowToastOnComplete,
+		EnableStreamOutput:      settings.EnableStreamOutput,
+		HotkeyCombination:       settings.HotkeyCombination,
+		ExtractPrompt:           settings.ExtractPrompt,
+		TranslatePrompt:         settings.TranslatePrompt,
+		APIBaseURL:              settings.APIBaseURL,
+		TranslateModel:          settings.TranslateModel,
+		VisionModel:             settings.VisionModel,
+		VisionAPIBaseURL:        settings.VisionAPIBaseURL,
+		VisionAPIKeyOverride:    settings.VisionAPIKeyOverride,
 		UseVisionForTranslation: settings.UseVisionForTranslation,
 	}
 }

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import {computed, ref} from 'vue';
-import type {StatusMessage, TranslationResult} from '../types';
+import type {StatusMessage, TranslationResult, TranslationSource} from '../types';
 import {formatDuration} from '../types';
 
 const props = defineProps<{
@@ -8,6 +8,8 @@ const props = defineProps<{
 	isBusy: boolean;
 	statusMessage: StatusMessage | null;
 	apiKeyMissing: boolean;
+	streamedText: string;
+	streamSource: TranslationSource | null;
 }>();
 
 const emit = defineEmits<{
@@ -21,12 +23,12 @@ function triggerScreenshot() {
 }
 
 async function copyTranslation() {
-	const result = props.currentResult;
-	if (!result || !result.translatedText) {
+	const text = displayText.value;
+	if (!text || !text.trim()) {
 		return;
 	}
 	try {
-		await navigator.clipboard.writeText(result.translatedText);
+		await navigator.clipboard.writeText(text);
 		showCopiedTip.value = true;
 		setTimeout(() => (showCopiedTip.value = false), 1600);
 	} catch (error) {
@@ -34,7 +36,16 @@ async function copyTranslation() {
 	}
 }
 
-const hasResult = computed(() => Boolean(props.currentResult?.translatedText?.trim()));
+const displayText = computed(() => {
+	if (props.streamedText && props.streamedText.trim()) {
+		return props.streamedText;
+	}
+	return props.currentResult?.translatedText ?? '';
+});
+
+const formattedText = computed(() => displayText.value.replace(/\n/g, '<br />'));
+const hasResult = computed(() => Boolean(displayText.value.trim()));
+const streamingActive = computed(() => Boolean(props.streamedText && props.streamedText.trim()));
 const durationText = computed(() => (props.currentResult ? formatDuration(props.currentResult.durationMs) : ''));
 </script>
 
@@ -54,23 +65,24 @@ const durationText = computed(() => (props.currentResult ? formatDuration(props.
 			</div>
 
 			<div class="result-card" :class="{empty: !hasResult}">
-				<header>
-					<div>
-						<h2>翻译结果</h2>
-						<p class="meta" v-if="props.statusMessage">{{ props.statusMessage.message }}</p>
-					</div>
-					<div class="result-actions">
-						<button class="ghost" :disabled="!hasResult" @click="copyTranslation">
-							复制结果
-						</button>
-						<span v-if="durationText" class="duration">耗时 {{ durationText }}</span>
-						<span v-if="showCopiedTip" class="copied-tip">已复制 ✓</span>
-					</div>
-				</header>
-				<div class="result-body">
-					<div v-if="hasResult" class="result-text" v-html="props.currentResult?.translatedText.replace(/\n/g, '<br />')"></div>
-					<div v-else class="placeholder">等待翻译结果或从历史记录中选择。</div>
-				</div>
+		<header>
+			<div>
+				<h2>翻译结果</h2>
+				<p class="meta" v-if="props.statusMessage">{{ props.statusMessage.message }}</p>
+			</div>
+			<div class="result-actions">
+				<span v-if="streamingActive" class="live-indicator">实时输出中…</span>
+				<button class="ghost" :disabled="!hasResult" @click="copyTranslation">
+					复制结果
+				</button>
+				<span v-if="durationText" class="duration">耗时 {{ durationText }}</span>
+				<span v-if="showCopiedTip" class="copied-tip">已复制 ✓</span>
+			</div>
+		</header>
+		<div class="result-body">
+			<div v-if="hasResult" class="result-text" v-html="formattedText"></div>
+			<div v-else class="placeholder">等待翻译结果或从历史记录中选择。</div>
+		</div>
 			</div>
 		</div>
 	</section>
@@ -201,6 +213,13 @@ button:disabled {
 	align-items: center;
 	gap: 0.7rem;
 	flex-wrap: wrap;
+}
+
+.live-indicator {
+	font-size: 0.78rem;
+	color: var(--accent);
+	font-weight: 600;
+	letter-spacing: 0.02em;
 }
 
 .result-body {

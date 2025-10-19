@@ -34,7 +34,7 @@ type StreamHandler func(stage string, content string)
 
 // Options 控制翻译服务行为
 type Options struct {
-	Stream                bool
+	Stream                  bool
 	UseVisionForTranslation bool
 }
 

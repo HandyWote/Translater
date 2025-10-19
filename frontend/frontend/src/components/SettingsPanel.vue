@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {computed, reactive, ref, watch} from 'vue';
+import {computed, onMounted, reactive, ref, watch} from 'vue';
 import type {SettingsState} from '../types';
 import {
 	DEFAULT_API_BASE_URL,
@@ -20,6 +20,69 @@ const emit = defineEmits<{
 }>();
 
 const form = reactive<SettingsState>({...props.settings});
+
+const SECTION_STORAGE_KEY = 'settings-panel:sections';
+const sectionDefaults = {
+	api: true,
+	models: false,
+	behavior: true,
+	prompts: false,
+	hotkey: true,
+	theme: true,
+} as const;
+type SectionKey = keyof typeof sectionDefaults;
+const sections = reactive<Record<SectionKey, boolean>>({...sectionDefaults});
+
+function loadSectionState() {
+	if (typeof window === 'undefined') {
+		return;
+	}
+	try {
+		const raw = window.localStorage.getItem(SECTION_STORAGE_KEY);
+		if (!raw) {
+			return;
+		}
+		const stored = JSON.parse(raw);
+		(Object.keys(sectionDefaults) as SectionKey[]).forEach((key) => {
+			if (typeof stored?.[key] === 'boolean') {
+				sections[key] = stored[key];
+			}
+		});
+	} catch (error) {
+		console.warn('恢复折叠状态失败', error);
+	}
+}
+
+function persistSectionState(value: Record<SectionKey, boolean>) {
+	if (typeof window === 'undefined') {
+		return;
+	}
+	try {
+		window.localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(value));
+	} catch (error) {
+		console.warn('保存折叠状态失败', error);
+	}
+}
+
+function isSectionExpanded(name: SectionKey): boolean {
+	return sections[name] ?? true;
+}
+
+function toggleSection(name: SectionKey) {
+	sections[name] = !isSectionExpanded(name);
+}
+
+onMounted(() => {
+	loadSectionState();
+});
+
+watch(
+	sections,
+	(next) => {
+		persistSectionState({...next});
+	},
+	{deep: true},
+);
 
 const DEFAULT_HOTKEY = 'Alt+T';
 const DEFAULT_HOTKEY_MODIFIER = 'Alt';
@@ -166,11 +229,17 @@ const themeOptions = [
 
 <template>
 	<form class="settings" @submit="handleSubmit">
-		<section class="card">
-			<header>
+	<section class="card" :class="{collapsed: !isSectionExpanded('api')}">
+		<header>
+			<div class="card-header-text">
 				<h2>API 访问</h2>
 				<p>{{ props.apiKeyMissing ? '未检测到 API Key，请输入有效凭证。' : '已配置 API Key，可直接使用截图和翻译功能。' }}</p>
-			</header>
+			</div>
+			<button type="button" class="collapse-toggle" @click="toggleSection('api')">
+				{{ isSectionExpanded('api') ? '收起' : '展开' }}
+			</button>
+		</header>
+		<div class="card-body" v-show="isSectionExpanded('api')">
 			<div class="grid api-grid">
 				<label class="field">
 					<span>翻译 API Key</span>
@@ -195,6 +264,20 @@ const themeOptions = [
 					<small>留空时沿用左侧接口地址，支持不同服务商。</small>
 				</label>
 			</div>
+		</div>
+	</section>
+
+	<section class="card" :class="{collapsed: !isSectionExpanded('models')}">
+		<header>
+			<div class="card-header-text">
+				<h2>模型与高级能力</h2>
+				<p>管理翻译模型、视觉模型以及流式/视觉直译等特性。</p>
+			</div>
+			<button type="button" class="collapse-toggle" @click="toggleSection('models')">
+				{{ isSectionExpanded('models') ? '收起' : '展开' }}
+			</button>
+		</header>
+		<div class="card-body" v-show="isSectionExpanded('models')">
 			<div class="grid model-grid">
 				<label class="field">
 					<span>翻译模型</span>
@@ -207,16 +290,39 @@ const themeOptions = [
 					<small>用于图像识别（多模态消息）。</small>
 				</label>
 			</div>
+			<div class="advanced-toggles">
+				<label class="toggle">
+					<input v-model="form.enableStreamOutput" type="checkbox"/>
+					<div>
+						<strong>启用流式输出</strong>
+						<span>实时推送翻译进度，适合长文本或逐句对照。</span>
+					</div>
+				</label>
+				<label class="toggle">
+					<input v-model="form.useVisionForTranslation" type="checkbox"/>
+					<div>
+						<strong>视觉模型直接翻译</strong>
+						<span>跳过文本模型，由多模态模型直接输出译文。</span>
+					</div>
+				</label>
+			</div>
 			<div class="model-actions">
 				<button type="button" class="ghost" @click="resetModels">恢复默认接口与模型</button>
 			</div>
-		</section>
+		</div>
+	</section>
 
-		<section class="card">
-			<header>
+	<section class="card" :class="{collapsed: !isSectionExpanded('behavior')}">
+		<header>
+			<div class="card-header-text">
 				<h2>翻译行为</h2>
 				<p>控制复制、前置等自动化行为。</p>
-			</header>
+			</div>
+			<button type="button" class="collapse-toggle" @click="toggleSection('behavior')">
+				{{ isSectionExpanded('behavior') ? '收起' : '展开' }}
+			</button>
+		</header>
+		<div class="card-body" v-show="isSectionExpanded('behavior')">
 			<div class="behavior-list">
 				<label class="toggle">
 					<input v-model="form.autoCopyResult" type="checkbox"/>
@@ -240,13 +346,20 @@ const themeOptions = [
 					</div>
 				</label>
 			</div>
-		</section>
+		</div>
+	</section>
 
-		<section class="card">
-			<header>
+	<section class="card" :class="{collapsed: !isSectionExpanded('prompts')}">
+		<header>
+			<div class="card-header-text">
 				<h2>提示词管理</h2>
 				<p>自定义文字识别与翻译阶段的提示词，适配不同语境。</p>
-			</header>
+			</div>
+			<button type="button" class="collapse-toggle" @click="toggleSection('prompts')">
+				{{ isSectionExpanded('prompts') ? '收起' : '展开' }}
+			</button>
+		</header>
+		<div class="card-body" v-show="isSectionExpanded('prompts')">
 			<label class="field">
 				<span>文字提取提示词</span>
 				<textarea
@@ -268,13 +381,20 @@ const themeOptions = [
 			<div class="prompt-actions">
 				<button type="button" class="ghost" @click="resetPrompts">恢复默认提示词</button>
 			</div>
-		</section>
+		</div>
+	</section>
 
-		<section class="card">
-			<header>
+	<section class="card" :class="{collapsed: !isSectionExpanded('hotkey')}">
+		<header>
+			<div class="card-header-text">
 				<h2>全局热键</h2>
 				<p>选择用于启动截图翻译的键位组合，保存后自动启用。</p>
-			</header>
+			</div>
+			<button type="button" class="collapse-toggle" @click="toggleSection('hotkey')">
+				{{ isSectionExpanded('hotkey') ? '收起' : '展开' }}
+			</button>
+		</header>
+		<div class="card-body" v-show="isSectionExpanded('hotkey')">
 			<div class="grid hotkey-grid">
 				<label class="field">
 					<span>修饰键</span>
@@ -294,20 +414,28 @@ const themeOptions = [
 				<strong class="hotkey-preview__value">{{ hotkeyPreview }}</strong>
 				<small>确保与其他软件热键不冲突，保存设置后立即生效。</small>
 			</div>
-		</section>
+		</div>
+	</section>
 
-		<section class="card">
-			<header>
+	<section class="card" :class="{collapsed: !isSectionExpanded('theme')}">
+		<header>
+			<div class="card-header-text">
 				<h2>界面主题</h2>
 				<p>根据喜好切换深浅色或跟随系统。</p>
-			</header>
+			</div>
+			<button type="button" class="collapse-toggle" @click="toggleSection('theme')">
+				{{ isSectionExpanded('theme') ? '收起' : '展开' }}
+			</button>
+		</header>
+		<div class="card-body" v-show="isSectionExpanded('theme')">
 			<label class="field">
 				<span>界面主题</span>
 				<select v-model="form.theme">
 					<option v-for="option in themeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
 				</select>
 			</label>
-		</section>
+		</div>
+	</section>
 
 		<div class="actions">
 			<button type="submit" class="primary">保存设置</button>
@@ -334,6 +462,25 @@ const themeOptions = [
 	gap: 1rem;
 }
 
+.card header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 0.9rem;
+}
+
+.card-header-text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+}
+
+.card-body {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
 header h2 {
 	margin: 0;
 	font-size: 1.1rem;
@@ -355,6 +502,20 @@ header p {
 .field span {
 	font-weight: 500;
 	font-size: 0.92rem;
+}
+
+.collapse-toggle {
+	border: none;
+	background: transparent;
+	color: var(--color-text-tertiary);
+	font-size: 0.8rem;
+	padding: 0.2rem 0.5rem;
+	cursor: pointer;
+	transition: color 0.18s ease;
+}
+
+.collapse-toggle:hover {
+	color: var(--color-text-secondary);
 }
 
 input,
@@ -391,6 +552,12 @@ small {
 	display: flex;
 	flex-direction: column;
 	gap: 1rem;
+}
+
+.advanced-toggles {
+	display: flex;
+	flex-direction: column;
+	gap: 0.9rem;
 }
 
 .behavior-list .toggle,

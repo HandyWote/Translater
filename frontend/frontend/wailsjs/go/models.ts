@@ -6,6 +6,7 @@ export namespace main {
 	    keepWindowOnTop: boolean;
 	    theme: string;
 	    showToastOnComplete: boolean;
+	    enableStreamOutput: boolean;
 	    hotkeyCombination: string;
 	    extractPrompt: string;
 	    translatePrompt: string;
@@ -14,6 +15,7 @@ export namespace main {
 	    visionModel: string;
 	    visionApiBaseUrl: string;
 	    visionApiKeyOverride: string;
+	    useVisionForTranslation: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SettingsDTO(source);
@@ -26,6 +28,7 @@ export namespace main {
 	        this.keepWindowOnTop = source["keepWindowOnTop"];
 	        this.theme = source["theme"];
 	        this.showToastOnComplete = source["showToastOnComplete"];
+	        this.enableStreamOutput = source["enableStreamOutput"];
 	        this.hotkeyCombination = source["hotkeyCombination"];
 	        this.extractPrompt = source["extractPrompt"];
 	        this.translatePrompt = source["translatePrompt"];
@@ -34,6 +37,7 @@ export namespace main {
 	        this.visionModel = source["visionModel"];
 	        this.visionApiBaseUrl = source["visionApiBaseUrl"];
 	        this.visionApiKeyOverride = source["visionApiKeyOverride"];
+	        this.useVisionForTranslation = source["useVisionForTranslation"];
 	    }
 	}
 	export class UIScreenshotBounds {
