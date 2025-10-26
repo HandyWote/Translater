@@ -38,7 +38,7 @@ func DefaultSettings() Settings {
 		KeepWindowOnTop:         false,
 		Theme:                   "system",
 		ShowToastOnComplete:     true,
-		EnableStreamOutput:      false,
+		EnableStreamOutput:      true,
 		HotkeyCombination:       "Alt+T",
 		ExtractPrompt:           prompts.DefaultExtractPrompt,
 		TranslatePrompt:         prompts.DefaultTranslatePrompt,
@@ -46,7 +46,7 @@ func DefaultSettings() Settings {
 		TranslateModel:          ai.DefaultTranslateModel,
 		VisionModel:             ai.DefaultVisionModel,
 		VisionAPIBaseURL:        ai.DefaultBaseURL,
-		UseVisionForTranslation: false,
+		UseVisionForTranslation: true,
 	}
 }
 
