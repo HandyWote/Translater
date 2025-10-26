@@ -34,6 +34,7 @@ var (
 	procFillRect                   = user32.NewProc("FillRect")
 	procRegisterHotKey             = user32.NewProc("RegisterHotKey")
 	procUnregisterHotKey           = user32.NewProc("UnregisterHotKey")
+	procShowScrollBar              = user32.NewProc("ShowScrollBar")
 )
 
 // Manager coordinates overlay window lifecycle on Windows.
@@ -96,6 +97,7 @@ func (m *Manager) Update(text string) error {
 }
 
 type overlayWindow struct {
+	baseRect  Rect
 	rect      Rect
 	textUTF16 []uint16
 
@@ -108,10 +110,14 @@ type overlayWindow struct {
 	fontRectHeight int32
 	fontPointSize  int
 	escHotkey      bool
+	scrollPos      int32
+	viewHeight     int32
+	contentHeight  int32
 }
 
 func newOverlayWindow(text string, rect Rect) (*overlayWindow, error) {
 	ow := &overlayWindow{
+		baseRect:  rect,
 		rect:      rect,
 		textUTF16: append(utf16.Encode([]rune(text)), 0),
 		ready:     make(chan error, 1),
@@ -139,6 +145,8 @@ func (ow *overlayWindow) UpdateText(text string) error {
 	ow.textUTF16 = append(utf16.Encode([]rune(text)), 0)
 	ow.fontRectWidth = 0
 	ow.fontRectHeight = 0
+	ow.contentHeight = 0
+	ow.updateLayout()
 	win.InvalidateRect(ow.hwnd, nil, true)
 	win.UpdateWindow(ow.hwnd)
 	return nil
@@ -197,7 +205,7 @@ func (ow *overlayWindow) createWindow() error {
 		win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_LAYERED|win.WS_EX_NOACTIVATE,
 		classNameUTF16,
 		nil,
-		win.WS_POPUP,
+		win.WS_POPUP|win.WS_VSCROLL,
 		int32(ow.rect.Left),
 		int32(ow.rect.Top),
 		width,
@@ -217,6 +225,7 @@ func (ow *overlayWindow) createWindow() error {
 		return err
 	}
 	ow.registerEscapeHotkey()
+	ow.updateLayout()
 	win.ShowWindow(hwnd, win.SW_SHOWNOACTIVATE)
 	win.UpdateWindow(hwnd)
 	return nil
@@ -261,6 +270,12 @@ func overlayWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	case win.WM_DESTROY:
 		ow.cleanup()
 		win.PostQuitMessage(0)
+		return 0
+	case win.WM_VSCROLL:
+		ow.onVScroll(wParam, lParam)
+		return 0
+	case win.WM_MOUSEWHEEL:
+		ow.onMouseWheel(wParam)
 		return 0
 	case win.WM_HOTKEY:
 		if uintptr(wParam) == escHotkeyID {
@@ -313,6 +328,8 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 	if len(ow.textUTF16) > 0 {
 		font := ow.ensureFittingFont(hdc, &inner)
 		drawRect := inner
+		drawRect.Top -= ow.scrollPos
+		drawRect.Bottom -= ow.scrollPos
 		var previous win.HGDIOBJ
 		if font != 0 {
 			textHeight := ow.measureTextHeight(hdc, font, int(inner.Right-inner.Left))
@@ -334,11 +351,250 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 	}
 }
 
+func (ow *overlayWindow) updateLayout() {
+	if ow.hwnd == 0 {
+		return
+	}
+	hdc := win.GetDC(ow.hwnd)
+	if hdc == 0 {
+		return
+	}
+	defer win.ReleaseDC(ow.hwnd, hdc)
+
+	pad := int32(windowPadding)
+	maxOuterWidth := int32(rectSafeDimension(ow.baseRect.Width))
+	maxOuterHeight := int32(rectSafeDimension(ow.baseRect.Height))
+	innerMaxWidth := maxOuterWidth - pad*2
+	innerMaxHeight := maxOuterHeight - pad*2
+	if innerMaxWidth <= 0 {
+		innerMaxWidth = 1
+	}
+	if innerMaxHeight <= 0 {
+		innerMaxHeight = 1
+	}
+
+	maxTarget := win.RECT{Left: 0, Top: 0, Right: innerMaxWidth, Bottom: innerMaxHeight}
+	font := ow.ensureFittingFont(hdc, &maxTarget)
+
+	innerWidth := innerMaxWidth
+	if font != 0 {
+		if width := int32(ow.measureTextSingleLine(hdc, font)); width > 0 {
+			innerWidth = width
+			if innerWidth > innerMaxWidth {
+				innerWidth = innerMaxWidth
+			}
+		}
+	}
+	if innerWidth <= 0 {
+		innerWidth = innerMaxWidth
+	}
+
+	_, textHeight := ow.measureText(hdc, font, int(innerWidth))
+	contentHeight := int32(textHeight)
+	if contentHeight <= 0 {
+		contentHeight = innerMaxHeight
+	}
+
+	innerHeight := contentHeight
+	lineHeight := ow.lineHeight(hdc, font)
+	if lineHeight <= 0 {
+		lineHeight = 1
+	}
+	if innerHeight < innerMaxHeight {
+		allowance := innerMaxHeight - innerHeight
+		extra := lineHeight
+		if extra > allowance {
+			extra = allowance
+		}
+		innerHeight += extra
+	}
+	if innerHeight > innerMaxHeight {
+		innerHeight = innerMaxHeight
+	}
+
+	needScroll := contentHeight > innerMaxHeight
+	if needScroll {
+		innerHeight = innerMaxHeight
+	}
+
+	outWidth := innerWidth + pad*2
+	if outWidth > maxOuterWidth {
+		outWidth = maxOuterWidth
+	}
+	outHeight := innerHeight + pad*2
+	if outHeight > maxOuterHeight {
+		outHeight = maxOuterHeight
+	}
+
+	flags := uint32(win.SWP_NOZORDER | win.SWP_NOACTIVATE)
+	win.SetWindowPos(ow.hwnd, 0, int32(ow.baseRect.Left), int32(ow.baseRect.Top), outWidth, outHeight, flags)
+	ow.rect.Width = int(outWidth)
+	ow.rect.Height = int(outHeight)
+	ow.viewHeight = innerHeight
+	ow.contentHeight = contentHeight
+	if needScroll {
+		ow.enableScrollbar()
+	} else {
+		ow.disableScrollbar()
+		ow.scrollPos = 0
+	}
+}
+
 func rectSafeDimension(value int) int {
 	if value <= 0 {
 		return 1
 	}
 	return value
+}
+
+func (ow *overlayWindow) enableScrollbar() {
+	var si win.SCROLLINFO
+	si.CbSize = uint32(unsafe.Sizeof(si))
+	si.FMask = win.SIF_RANGE | win.SIF_PAGE | win.SIF_POS
+	si.NMin = 0
+	si.NMax = ow.contentHeight
+	if si.NMax < 0 {
+		si.NMax = 0
+	}
+	si.NPage = uint32(ow.viewHeight)
+	if si.NPage == 0 {
+		si.NPage = 1
+	}
+	if ow.scrollPos > ow.contentHeight-ow.viewHeight {
+		ow.scrollPos = maxInt32(0, ow.contentHeight-ow.viewHeight)
+	}
+	si.NPos = ow.scrollPos
+	win.SetScrollInfo(ow.hwnd, win.SB_VERT, &si, true)
+	showScrollBar(ow.hwnd, win.SB_VERT, true)
+}
+
+func (ow *overlayWindow) disableScrollbar() {
+	var si win.SCROLLINFO
+	si.CbSize = uint32(unsafe.Sizeof(si))
+	si.FMask = win.SIF_RANGE | win.SIF_PAGE | win.SIF_POS
+	win.SetScrollInfo(ow.hwnd, win.SB_VERT, &si, true)
+	showScrollBar(ow.hwnd, win.SB_VERT, false)
+}
+
+func (ow *overlayWindow) measureTextSingleLine(hdc win.HDC, font win.HFONT) int {
+	if font == 0 {
+		return 0
+	}
+	prev := win.SelectObject(hdc, win.HGDIOBJ(font))
+	defer win.SelectObject(hdc, prev)
+
+	rect := win.RECT{Left: 0, Top: 0, Right: 0, Bottom: 0}
+	flags := uint32(win.DT_LEFT | win.DT_NOPREFIX | win.DT_SINGLELINE | win.DT_CALCRECT)
+	win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &rect, flags, nil)
+	return int(rect.Right - rect.Left)
+}
+
+func (ow *overlayWindow) lineHeight(hdc win.HDC, font win.HFONT) int32 {
+	if font == 0 {
+		return 0
+	}
+	prev := win.SelectObject(hdc, win.HGDIOBJ(font))
+	defer win.SelectObject(hdc, prev)
+	var tm win.TEXTMETRIC
+	if win.GetTextMetrics(hdc, &tm) {
+		return int32(tm.TmHeight)
+	}
+	return 0
+}
+
+func (ow *overlayWindow) onVScroll(wParam, lParam uintptr) {
+	_ = lParam
+	var si win.SCROLLINFO
+	si.CbSize = uint32(unsafe.Sizeof(si))
+	si.FMask = win.SIF_ALL
+	if !win.GetScrollInfo(ow.hwnd, win.SB_VERT, &si) {
+		return
+	}
+	pos := int32(si.NPos)
+	switch lowWord(uint32(wParam)) {
+	case win.SB_LINEUP:
+		pos -= ow.scrollStep()
+	case win.SB_LINEDOWN:
+		pos += ow.scrollStep()
+	case win.SB_PAGEUP:
+		pos -= ow.viewHeight
+	case win.SB_PAGEDOWN:
+		pos += ow.viewHeight
+	case win.SB_THUMBPOSITION, win.SB_THUMBTRACK:
+		pos = int32(si.NTrackPos)
+	default:
+		return
+	}
+	ow.applyScrollPos(pos)
+}
+
+func (ow *overlayWindow) onMouseWheel(wParam uintptr) {
+	delta := int16(highWord(uint32(wParam)))
+	if delta == 0 {
+		return
+	}
+	step := ow.scrollStep()
+	if step == 0 {
+		step = 20
+	}
+	pos := ow.scrollPos - int32(delta)/120*step
+	ow.applyScrollPos(pos)
+}
+
+func (ow *overlayWindow) scrollStep() int32 {
+	if ow.viewHeight > 0 {
+		return maxInt32(10, ow.viewHeight/10)
+	}
+	return 10
+}
+
+func (ow *overlayWindow) applyScrollPos(pos int32) {
+	if ow.viewHeight <= 0 {
+		return
+	}
+	maxPos := ow.contentHeight - ow.viewHeight
+	if maxPos < 0 {
+		maxPos = 0
+	}
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > maxPos {
+		pos = maxPos
+	}
+	ow.scrollPos = pos
+	var si win.SCROLLINFO
+	si.CbSize = uint32(unsafe.Sizeof(si))
+	si.FMask = win.SIF_POS
+	si.NPos = pos
+	win.SetScrollInfo(ow.hwnd, win.SB_VERT, &si, true)
+	win.InvalidateRect(ow.hwnd, nil, true)
+}
+
+func lowWord(v uint32) uint16 {
+	return uint16(v & 0xFFFF)
+}
+
+func highWord(v uint32) uint16 {
+	return uint16((v >> 16) & 0xFFFF)
+}
+
+func maxInt32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func showScrollBar(hwnd win.HWND, bar int32, show bool) {
+	if procShowScrollBar == nil {
+		return
+	}
+	visible := uintptr(0)
+	if show {
+		visible = 1
+	}
+	procShowScrollBar.Call(uintptr(hwnd), uintptr(bar), visible)
 }
 
 func fillRect(hdc win.HDC, rect *win.RECT, brush win.HBRUSH) {
