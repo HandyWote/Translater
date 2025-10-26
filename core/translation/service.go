@@ -36,6 +36,8 @@ type StreamHandler func(stage string, content string)
 type Options struct {
 	Stream                  bool
 	UseVisionForTranslation bool
+	SourceLanguage          string
+	TargetLanguage          string
 }
 
 // ScreenshotTranslationResult 包含一次截图翻译的详情
@@ -153,42 +155,31 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 		return nil, fmt.Errorf("截图失败: %w", err)
 	}
 
-	// OCR 阶段
-	extractResponse, err := s.AIClient.ImageToWords(s.extractPrompt, imageData, "image/png", "")
-	if err != nil {
-		return nil, fmt.Errorf("文字提取失败: %w", err)
+	// 创建提示词变量
+	vars := prompts.PromptVariables{
+		SourceLanguage:          s.options.SourceLanguage,
+		TargetLanguage:          s.options.TargetLanguage,
+		UseVisionForTranslation: s.options.UseVisionForTranslation,
 	}
 
-	if len(extractResponse.Choices) == 0 {
-		return nil, fmt.Errorf("文字提取结果为空")
-	}
-
-	extractedText, err := messageContentToString(extractResponse.Choices[0].Message.Content)
-	if err != nil {
-		return nil, fmt.Errorf("提取内容解析失败: %w", err)
-	}
+	// 处理动态提示词
+	processedExtractPrompt := prompts.ProcessExtractPrompt(s.extractPrompt, vars)
+	processedTranslatePrompt := prompts.ProcessTranslatePrompt(s.translatePrompt, vars)
 
 	result := &ScreenshotTranslationResult{
-		ExtractedText:   extractedText,
-		ExtractPrompt:   s.extractPrompt,
-		TranslatePrompt: s.translatePrompt,
+		ExtractPrompt:   processedExtractPrompt,
+		TranslatePrompt: processedTranslatePrompt,
 		Bounds:          bounds,
-	}
-
-	if strings.TrimSpace(extractedText) == "" {
-		result.ProcessingTime = time.Since(started)
-		return result, nil
 	}
 
 	streamEnabled := s.options.Stream && s.streamHandler != nil
 
-	// 翻译阶段
-	var translateResponse *ai.ZhipuAIResponse
+	// 视觉直出翻译模式
 	if s.options.UseVisionForTranslation {
-		visionPrompt := s.buildVisionTranslationMessage(extractedText)
+		directPrompt := prompts.BuildVisionDirectTranslationPrompt(vars)
 		if streamEnabled {
-			translateResponse, err = s.AIClient.ImageToTranslationStream(
-				visionPrompt,
+			translateResponse, err := s.AIClient.ImageToTranslationStream(
+				directPrompt,
 				imageData,
 				"image/png",
 				"",
@@ -196,43 +187,91 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 					s.emitStream("translate", text)
 				},
 			)
+			if err != nil {
+				return nil, fmt.Errorf("视觉直出翻译失败: %w", err)
+			}
+			if len(translateResponse.Choices) == 0 {
+				return nil, fmt.Errorf("视觉直出翻译结果为空")
+			}
+			translatedText, err := messageContentToString(translateResponse.Choices[0].Message.Content)
+			if err != nil {
+				return nil, fmt.Errorf("翻译内容解析失败: %w", err)
+			}
+			result.TranslatedText = translatedText
 		} else {
-			translateResponse, err = s.AIClient.ImageToTranslation(
-				visionPrompt,
+			translateResponse, err := s.AIClient.ImageToTranslation(
+				directPrompt,
 				imageData,
 				"image/png",
 				"",
 			)
+			if err != nil {
+				return nil, fmt.Errorf("视觉直出翻译失败: %w", err)
+			}
+			if len(translateResponse.Choices) == 0 {
+				return nil, fmt.Errorf("视觉直出翻译结果为空")
+			}
+			translatedText, err := messageContentToString(translateResponse.Choices[0].Message.Content)
+			if err != nil {
+				return nil, fmt.Errorf("翻译内容解析失败: %w", err)
+			}
+			result.TranslatedText = translatedText
 		}
 	} else {
+		// 传统模式：先提取，再翻译
+		
+		// OCR 阶段
+		extractResponse, err := s.AIClient.ImageToWords(processedExtractPrompt, imageData, "image/png", "")
+		if err != nil {
+			return nil, fmt.Errorf("文字提取失败: %w", err)
+		}
+
+		if len(extractResponse.Choices) == 0 {
+			return nil, fmt.Errorf("文字提取结果为空")
+		}
+
+		extractedText, err := messageContentToString(extractResponse.Choices[0].Message.Content)
+		if err != nil {
+			return nil, fmt.Errorf("提取内容解析失败: %w", err)
+		}
+
+		result.ExtractedText = extractedText
+
+		if strings.TrimSpace(extractedText) == "" {
+			result.ProcessingTime = time.Since(started)
+			return result, nil
+		}
+
+		// 翻译阶段
+		var translateResponse *ai.ZhipuAIResponse
 		if streamEnabled {
 			translateResponse, err = s.AIClient.TranslateStream(
 				extractedText,
-				s.translatePrompt,
+				processedTranslatePrompt,
 				func(text string) {
 					s.emitStream("translate", text)
 				},
 			)
 		} else {
-			translateResponse, err = s.AIClient.Translate(extractedText, s.translatePrompt)
+			translateResponse, err = s.AIClient.Translate(extractedText, processedTranslatePrompt)
 		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("翻译失败: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("翻译失败: %w", err)
+		}
+
+		if len(translateResponse.Choices) == 0 {
+			return nil, fmt.Errorf("翻译结果为空")
+		}
+
+		translatedText, err := messageContentToString(translateResponse.Choices[0].Message.Content)
+		if err != nil {
+			return nil, fmt.Errorf("翻译内容解析失败: %w", err)
+		}
+
+		result.TranslatedText = translatedText
 	}
 
-	if len(translateResponse.Choices) == 0 {
-		return nil, fmt.Errorf("翻译结果为空")
-	}
-
-	translatedText, err := messageContentToString(translateResponse.Choices[0].Message.Content)
-	if err != nil {
-		return nil, fmt.Errorf("翻译内容解析失败: %w", err)
-	}
-
-	result.TranslatedText = translatedText
 	result.ProcessingTime = time.Since(started)
-
 	return result, nil
 }
 
@@ -249,18 +288,28 @@ func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error
 	started := time.Now()
 	streamEnabled := s.options.Stream && s.streamHandler != nil
 
+	// 创建提示词变量
+	vars := prompts.PromptVariables{
+		SourceLanguage:          s.options.SourceLanguage,
+		TargetLanguage:          s.options.TargetLanguage,
+		UseVisionForTranslation: s.options.UseVisionForTranslation,
+	}
+
+	// 处理动态提示词
+	processedTranslatePrompt := prompts.ProcessTranslatePrompt(s.translatePrompt, vars)
+
 	var translateResponse *ai.ZhipuAIResponse
 	var err error
 	if streamEnabled {
 		translateResponse, err = s.AIClient.TranslateStream(
 			input,
-			s.translatePrompt,
+			processedTranslatePrompt,
 			func(text string) {
 				s.emitStream("translate", text)
 			},
 		)
 	} else {
-		translateResponse, err = s.AIClient.Translate(input, s.translatePrompt)
+		translateResponse, err = s.AIClient.Translate(input, processedTranslatePrompt)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("翻译失败: %w", err)
@@ -278,7 +327,7 @@ func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error
 	return &TextTranslationResult{
 		OriginalText:    input,
 		TranslatedText:  translatedText,
-		TranslatePrompt: s.translatePrompt,
+		TranslatePrompt: processedTranslatePrompt,
 		ProcessingTime:  time.Since(started),
 	}, nil
 }
@@ -306,6 +355,8 @@ func (s *ServiceImpl) emitStream(stage, content string) {
 	s.streamHandler(stage, content)
 }
 
+// buildVisionTranslationMessage 保留此函数以保持向后兼容性，但不再使用
+// 已被新的视觉直出翻译模式替代
 func (s *ServiceImpl) buildVisionTranslationMessage(extractedText string) string {
 	var builder strings.Builder
 	builder.WriteString(s.translatePrompt)

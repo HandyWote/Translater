@@ -16,6 +16,8 @@ export namespace main {
 	    visionApiBaseUrl: string;
 	    visionApiKeyOverride: string;
 	    useVisionForTranslation: boolean;
+	    sourceLanguage: string;
+	    targetLanguage: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SettingsDTO(source);
@@ -38,6 +40,8 @@ export namespace main {
 	        this.visionApiBaseUrl = source["visionApiBaseUrl"];
 	        this.visionApiKeyOverride = source["visionApiKeyOverride"];
 	        this.useVisionForTranslation = source["useVisionForTranslation"];
+	        this.sourceLanguage = source["sourceLanguage"];
+	        this.targetLanguage = source["targetLanguage"];
 	    }
 	}
 	export class UIScreenshotBounds {

@@ -1,21 +1,60 @@
 <script lang="ts" setup>
 import {computed} from 'vue';
-import {DEFAULT_TRANSLATE_MODEL, DEFAULT_VISION_MODEL, defaultSettingsState} from '../../types';
+import {
+	DEFAULT_EXTRACT_PROMPT,
+	DEFAULT_TRANSLATE_MODEL,
+	DEFAULT_TRANSLATE_PROMPT,
+	DEFAULT_VISION_MODEL,
+	defaultSettingsState,
+	LANGUAGE_MAP,
+} from '../../types';
 import {useSettingsForm} from './useSettingsForm';
 import AppButton from '../base/AppButton.vue';
 
 const form = useSettingsForm();
 
 const showTranslateModelField = computed(() => !form.useVisionForTranslation);
+const showLanguageSelectors = computed(
+	() => form.extractPrompt === DEFAULT_EXTRACT_PROMPT && form.translatePrompt === DEFAULT_TRANSLATE_PROMPT,
+);
 
-function resetModels() {
-	const defaults = defaultSettingsState();
-	form.apiBaseUrl = defaults.apiBaseUrl;
-	form.visionApiBaseUrl = defaults.visionApiBaseUrl;
-	form.visionApiKeyOverride = defaults.visionApiKeyOverride;
-	form.translateModel = defaults.translateModel;
-	form.visionModel = defaults.visionModel;
-}
+// 语言选项
+const sourceLanguageOptions = computed(() => [
+	{ value: 'auto', label: LANGUAGE_MAP['auto'] },
+	{ value: 'zh-CN', label: LANGUAGE_MAP['zh-CN'] },
+	{ value: 'zh-TW', label: LANGUAGE_MAP['zh-TW'] },
+	{ value: 'en', label: LANGUAGE_MAP['en'] },
+	{ value: 'ja', label: LANGUAGE_MAP['ja'] },
+	{ value: 'ko', label: LANGUAGE_MAP['ko'] },
+	{ value: 'fr', label: LANGUAGE_MAP['fr'] },
+	{ value: 'de', label: LANGUAGE_MAP['de'] },
+	{ value: 'es', label: LANGUAGE_MAP['es'] },
+	{ value: 'ru', label: LANGUAGE_MAP['ru'] },
+	{ value: 'ar', label: LANGUAGE_MAP['ar'] },
+	{ value: 'pt', label: LANGUAGE_MAP['pt'] },
+	{ value: 'it', label: LANGUAGE_MAP['it'] },
+	{ value: 'th', label: LANGUAGE_MAP['th'] },
+	{ value: 'vi', label: LANGUAGE_MAP['vi'] },
+]);
+
+const targetLanguageOptions = computed(() => [
+	{ value: 'zh-CN', label: LANGUAGE_MAP['zh-CN'] },
+	{ value: 'zh-TW', label: LANGUAGE_MAP['zh-TW'] },
+	{ value: 'en', label: LANGUAGE_MAP['en'] },
+	{ value: 'ja', label: LANGUAGE_MAP['ja'] },
+	{ value: 'ko', label: LANGUAGE_MAP['ko'] },
+	{ value: 'fr', label: LANGUAGE_MAP['fr'] },
+	{ value: 'de', label: LANGUAGE_MAP['de'] },
+	{ value: 'es', label: LANGUAGE_MAP['es'] },
+	{ value: 'ru', label: LANGUAGE_MAP['ru'] },
+	{ value: 'ar', label: LANGUAGE_MAP['ar'] },
+	{ value: 'pt', label: LANGUAGE_MAP['pt'] },
+	{ value: 'it', label: LANGUAGE_MAP['it'] },
+	{ value: 'th', label: LANGUAGE_MAP['th'] },
+	{ value: 'vi', label: LANGUAGE_MAP['vi'] },
+]);
+
+
 </script>
 
 <template>
@@ -30,6 +69,26 @@ function resetModels() {
 				<span>翻译模型</span>
 				<input v-model="form.translateModel" type="text" :placeholder="DEFAULT_TRANSLATE_MODEL" autocomplete="off" />
 				<small>用于文本翻译（Chat Completions）。</small>
+			</label>
+		</div>
+		<div v-if="showLanguageSelectors" class="settings-grid__row">
+			<label class="settings-field">
+				<span>源语言</span>
+				<select v-model="form.sourceLanguage">
+					<option v-for="option in sourceLanguageOptions" :key="option.value" :value="option.value">
+						{{ option.label }}
+					</option>
+				</select>
+				<small>指定要翻译的源语言，选择"自动检测"可自动识别。</small>
+			</label>
+			<label class="settings-field">
+				<span>目标语言</span>
+				<select v-model="form.targetLanguage">
+					<option v-for="option in targetLanguageOptions" :key="option.value" :value="option.value">
+						{{ option.label }}
+					</option>
+				</select>
+				<small>指定翻译的目标语言。</small>
 			</label>
 		</div>
 		<div class="settings-toggles">
@@ -75,7 +134,8 @@ function resetModels() {
 	font-weight: 500;
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field select {
 	background: var(--surface-base);
 	border: 1px solid var(--border-subtle);
 	border-radius: 12px;
@@ -84,10 +144,15 @@ function resetModels() {
 	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.settings-field input:focus {
+.settings-field input:focus,
+.settings-field select:focus {
 	outline: none;
 	border-color: var(--accent);
 	box-shadow: 0 0 0 2px rgba(20, 131, 255, 0.25);
+}
+
+.settings-field select {
+	cursor: pointer;
 }
 
 .settings-field small {
@@ -133,10 +198,5 @@ function resetModels() {
 
 .settings-toggle--primary {
 	border-color: rgba(20, 131, 255, 0.22);
-}
-
-.settings-actions {
-	display: flex;
-	justify-content: flex-end;
 }
 </style>

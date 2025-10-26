@@ -101,7 +101,7 @@ function resetForm() {
 					<template #actions>
 						<div class="settings-nav-actions">
 							<AppButton type="submit">保存设置</AppButton>
-							<AppButton variant="ghost" type="button" class="settings-actions" @click="resetForm">恢复默认</AppButton>
+							<AppButton variant="ghost" type="button" @click="resetForm">恢复默认</AppButton>
 						</div>
 					</template>
 				</SettingsNav>
@@ -222,10 +222,6 @@ function resetForm() {
 	gap: 0.6rem;
 }
 
-.settings-actions {
-	display: flex;
-	justify-content: flex-end;
-}
 
 @media (max-width: 960px) {
 	.settings-layout {

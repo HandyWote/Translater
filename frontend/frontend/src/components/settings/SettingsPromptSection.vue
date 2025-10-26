@@ -74,7 +74,7 @@ function resetPrompts() {
 		</label>
 		<div v-if="enableCustomPrompts" class="prompt-fields">
 			<label class="prompt-field">
-				<span>视觉识别提示词（Vision 提取）</span>
+				<span>视觉识别提示词</span>
 				<textarea v-model="extractPromptField" rows="4" placeholder="默认策略" />
 			</label>
 			<label class="prompt-field">

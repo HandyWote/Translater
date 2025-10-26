@@ -76,6 +76,8 @@ func main() {
 		translation.Options{
 			Stream:                  settings.EnableStreamOutput,
 			UseVisionForTranslation: settings.UseVisionForTranslation,
+			SourceLanguage:          settings.SourceLanguage,
+			TargetLanguage:          settings.TargetLanguage,
 		},
 	)
 

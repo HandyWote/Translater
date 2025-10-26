@@ -29,6 +29,8 @@ type Settings struct {
 	VisionAPIBaseURL        string `json:"visionApiBaseUrl"`
 	VisionAPIKeyOverride    string `json:"visionApiKeyOverride"`
 	UseVisionForTranslation bool   `json:"useVisionForTranslation"`
+	SourceLanguage          string `json:"sourceLanguage"`
+	TargetLanguage          string `json:"targetLanguage"`
 }
 
 // DefaultSettings 返回默认配置
@@ -47,6 +49,8 @@ func DefaultSettings() Settings {
 		VisionModel:             ai.DefaultVisionModel,
 		VisionAPIBaseURL:        ai.DefaultBaseURL,
 		UseVisionForTranslation: true,
+		SourceLanguage:          "auto",
+		TargetLanguage:          "zh-CN",
 	}
 }
 
@@ -152,4 +156,10 @@ func applySettingsDefaults(settings *Settings) {
 		settings.VisionAPIBaseURL = ai.NormalizeBaseURL(settings.VisionAPIBaseURL)
 	}
 	settings.VisionAPIKeyOverride = strings.TrimSpace(settings.VisionAPIKeyOverride)
+	if strings.TrimSpace(settings.SourceLanguage) == "" {
+		settings.SourceLanguage = defaults.SourceLanguage
+	}
+	if strings.TrimSpace(settings.TargetLanguage) == "" {
+		settings.TargetLanguage = defaults.TargetLanguage
+	}
 }

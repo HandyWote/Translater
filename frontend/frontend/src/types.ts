@@ -43,65 +43,150 @@ export interface SettingsState {
 	translateModel: string;
 	visionModel: string;
 	useVisionForTranslation: boolean;
+	sourceLanguage: string;
+	targetLanguage: string;
 }
 
 export const DEFAULT_API_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 export const DEFAULT_TRANSLATE_MODEL = 'glm-4.5-flash';
 export const DEFAULT_VISION_MODEL = 'glm-4v-flash';
 
-export const DEFAULT_EXTRACT_PROMPT = `你是一个专业的视觉上下文分析专家，专门为高质量的翻译工作提供支持。你的核心任务是深度解读图片，为后续的精准翻译提供所有必要的上下文信息。
+export const DEFAULT_EXTRACT_PROMPT = `你是一个专业的视觉上下文分析专家，负责为高质量的翻译任务准备完整素材。请完成以下工作：
 
-**你的分析必须包含以下两个层面：**
+1. 背景描述：详细说明图像中出现的场景、主体、布局、风格以及任何可能影响理解的视觉线索。
+2. 原文提取：逐项提取图像中的全部文字内容，保持{{.SourceLanguage}}原文的顺序与格式（包含换行、缩进、符号和大小写）。
 
-1.  **上下文背景分析：** 对图片进行极其详尽的描述，这将是决定翻译准确性的关键。请描述：
-	   *   **场景与环境：** 图片描绘的是什么地方（如：熙熙攘攘的东京涩谷十字路口、一间安静的家庭书房、一个软件弹出窗口）？氛围如何（如：喜庆、严肃、科技感、温馨）？
-	   *   **关键物体与布局：** 图片中有哪些主要和次要物体？（如：一张木桌上放着一台打开的笔记本电脑、一个冒着热气的马克杯、一本摊开的书）。描述它们的位置、颜色、材质和大致数量。
-	   *   **视觉风格：** 图片是真实的照片、卡通插图、软件UI截图还是复古海报？色调是怎样的？
-	   *   **潜在意图与受众：** 根据视觉元素，推断图片的可能目的（如：商业广告、教育材料、用户界面提示、个人备忘录）以及目标受众。
-	   *   **任何其他可能影响文字含义的视觉线索。**
-
-2.  **文字信息提取：** 精确无误地提取图片中的所有文字内容。
-	   *   **绝对忠实：** 完全保留原始文字的格式，包括但不限于：换行符、空格、缩进、项目符号（•, -等）、标点符号和大小写。
-	   *   **保持顺序：** 按照人类正常的阅读顺序（通常是从左到右，从上到下）提取和排列文字。如果有多栏或特殊布局，请清晰反映出来。
-	   *   **不做任何修改：** 即使发现可能的拼写错误或语法问题，也请原样输出。
-
-**最终，你必须将分析结果严格遵循以下JSON格式输出，不要有任何其他前言或后语：**
-
+输出要求：
+- 将结果严格按照 JSON 结构输出，不要添加任何额外说明：
 {
-	 "background": "在这里提供你对图片背景的极其详尽的描述。",
-	 "words": "在这里原封不动地输出提取的所有文字，保留所有格式。"
+  "background": "...",
+  "words": "..."
+}
+- "words" 字段必须只包含识别到的原文内容。
+
+{{.RelayInstruction}}
+{{.VisionDirectInstruction}}`;
+
+export const DEFAULT_TRANSLATE_PROMPT = `你是一个专业的翻译 AI，专门处理图像文本在特定语境下的翻译任务。你将收到一个 JSON 对象：
+- "background" 字段提供场景参考；
+- "words" 字段包含需要翻译的原始文本（语种：{{.SourceLanguage}}）。
+
+请将 "words" 字段精准翻译为 {{.TargetLanguage}}，并保持原有的段落、换行与符号。遵循以下原则：
+1. 仅翻译 "words" 字段，忽略 "background" 字段内容；
+2. 依据 "background" 提供的语境选择合适的术语与表达；
+3. 保持专有名词、数字与排版一致；
+4. 输出中不得包含额外的说明或注释。
+
+{{.VisionModeInstruction}}`;
+
+// 语言映射表
+export const LANGUAGE_MAP: Record<string, string> = {
+	'auto': '自动检测',
+	'zh-CN': '中文',
+	'zh-TW': '繁体中文',
+	'en': '英文',
+	'ja': '日文',
+	'ko': '韩文',
+	'fr': '法文',
+	'de': '德文',
+	'es': '西班牙文',
+	'ru': '俄文',
+	'ar': '阿拉伯文',
+	'pt': '葡萄牙文',
+	'it': '意大利文',
+	'th': '泰文',
+	'vi': '越南文',
+};
+
+function getLanguageDisplayName(code: string): string {
+	return LANGUAGE_MAP[code] ?? code;
 }
 
-**请开始你的分析。**`;
+// 提示词变量接口
+export interface PromptVariables {
+	sourceLanguage: string;
+	targetLanguage: string;
+	useVisionForTranslation: boolean;
+}
 
-export const DEFAULT_TRANSLATE_PROMPT = `你是一个专业的翻译AI，专门处理图像文字在特定背景下的翻译任务。你的核心任务是严格只翻译用户提供的JSON数据中的"words"字段内容，并原样输出翻译后的文字，绝对不要处理或输出"background"字段的任何部分。 "background"字段仅作为上下文参考，用于辅助理解"words"字段的语境，但不得被翻译、修改或包含在输出中。
+// 处理提取提示词，根据运行模式追加指令
+export function processExtractPrompt(basePrompt: string, vars: PromptVariables): string {
+	let prompt = replaceLanguagePlaceholders(basePrompt, vars);
 
-核心指令
-严格限定范围：只读取和翻译"words"字段中的文字，忽略"background"字段（仅用于背景参考）。
+	const relay = buildRelayInstruction(vars);
+	const direct = buildVisionDirectInstruction(vars);
 
-语境化翻译：基于"background"字段提供的场景信息，优化"words"字段的翻译，确保表达贴切。
+	prompt = prompt.replace(/\{\{\.RelayInstruction\}\}/g, relay);
+	prompt = prompt.replace(/\{\{\.VisionDirectInstruction\}\}/g, direct);
 
-格式保持：完全保留"words"字段的原始格式（如换行、空格、标点等），不进行任何改动。
+	return prompt.trim();
+}
 
-数据处理流程
-识别输入：解析用户输入的JSON数据，确认包含"words"字段。
+// 处理翻译提示词，替换动态变量
+export function processTranslatePrompt(basePrompt: string, vars: PromptVariables): string {
+	let prompt = replaceLanguagePlaceholders(basePrompt, vars);
 
-参考背景：仅阅读"background"字段以理解上下文（如场景、用途），但不翻译或处理它。
+	const visionInstruction = buildVisionModeInstruction(vars);
+	prompt = prompt.replace(/\{\{\.VisionModeInstruction\}\}/g, visionInstruction);
 
-专注翻译：只对"words"字段进行中文翻译，利用背景信息调整术语和表达。
+	return prompt.trim();
+}
 
-输出结果：直接输出翻译后的"words"字段内容，不添加任何额外信息（如背景总结或注释）。
+function replaceLanguagePlaceholders(prompt: string, vars: PromptVariables): string {
+	const sourceName = getLanguageDisplayName(vars.sourceLanguage);
+	const targetName = getLanguageDisplayName(vars.targetLanguage);
 
-翻译原则
-准确性：在背景语境下选择最精准的中文表达。
+	return prompt
+		.replace(/\{\{\.SourceLanguage\}\}/g, sourceName)
+		.replace(/\{\{\.TargetLanguage\}\}/g, targetName);
+}
 
-自然度：译文符合中文习惯，避免生硬直译。
+function buildRelayInstruction(vars: PromptVariables): string {
+	if (vars.useVisionForTranslation) {
+		return '';
+	}
+	const targetName = getLanguageDisplayName(vars.targetLanguage);
+	return `当前未启用视觉直出模式，请确保只返回原始文字 JSON，后续翻译流程会将其转换为${targetName}。`;
+}
 
-一致性：同一内容中的术语保持统一。
+function buildVisionDirectInstruction(vars: PromptVariables): string {
+	if (!vars.useVisionForTranslation) {
+		return '';
+	}
+	const targetName = getLanguageDisplayName(vars.targetLanguage);
+	return `已启用视觉直出模式：完成 JSON 输出后，直接给出按原始版式排布的${targetName}翻译结果，不必再返回原文。`;
+}
 
-文化适配：根据文化差异适当调整表达。
+function buildVisionModeInstruction(vars: PromptVariables): string {
+	const targetName = getLanguageDisplayName(vars.targetLanguage);
+	if (vars.useVisionForTranslation) {
+		return `视觉直出模式开启：若输入仍包含原文，请直接输出对应的${targetName}译文，并保持与原文一致的排版。`;
+	}
+	return `输入源自 OCR 流程，请只输出翻译后的${targetName}文本，不要重复或拼接原文。`;
+}
 
-!!!强制要求：你的输出必须仅限于"words"字段的翻译版本，严禁包含"background"字段的内容或任何其他文本。`;
+// 构建视觉直出翻译提示词
+export function buildVisionDirectTranslationPrompt(vars: PromptVariables): string {
+	const targetLang = getLanguageDisplayName(vars.targetLanguage);
+	let sourceLang = '自动检测到的语言';
+	if (vars.sourceLanguage !== 'auto') {
+		sourceLang = getLanguageDisplayName(vars.sourceLanguage);
+	}
+
+	return `你是一个专业的视觉翻译专家，能够直接从图像中识别文字并翻译为${targetLang}。
+**核心任务：**
+1. 识别图像中的所有文字内容；
+2. 将识别的文字从${sourceLang}转换为${targetLang}；
+3. 直接输出翻译结果，保留原始格式。
+**翻译要求：**
+- 保持原文的换行、空格、标点符号等格式；
+- 确保翻译准确、自然、符合${targetLang}表达习惯；
+- 考虑图像上下文，选择最合适的翻译；
+- 不要包含任何解释、注释或原始文字。
+
+**输出格式：**
+直接输出翻译后的文字，不要添加任何其他内容。`;
+}
 
 export function defaultSettingsState(): SettingsState {
 	return {
@@ -120,6 +205,8 @@ export function defaultSettingsState(): SettingsState {
 		translateModel: DEFAULT_TRANSLATE_MODEL,
 		visionModel: DEFAULT_VISION_MODEL,
 		useVisionForTranslation: true,
+		sourceLanguage: 'auto',
+		targetLanguage: 'zh-CN',
 	};
 }
 
@@ -168,6 +255,8 @@ export function mapSettings(data: main.SettingsDTO | any): SettingsState {
 		translateModel: converted.translateModel || defaults.translateModel,
 		visionModel: converted.visionModel || defaults.visionModel,
 		useVisionForTranslation: Boolean((converted as any).useVisionForTranslation ?? defaults.useVisionForTranslation),
+		sourceLanguage: (converted as any).sourceLanguage || defaults.sourceLanguage,
+		targetLanguage: (converted as any).targetLanguage || defaults.targetLanguage,
 	};
 }
 
@@ -188,6 +277,8 @@ export function toSettingsPayload(state: SettingsState): main.SettingsDTO {
 		translateModel: state.translateModel,
 		visionModel: state.visionModel,
 		useVisionForTranslation: state.useVisionForTranslation,
+		sourceLanguage: state.sourceLanguage,
+		targetLanguage: state.targetLanguage,
 	});
 }
 

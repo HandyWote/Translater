@@ -283,6 +283,8 @@ type SettingsDTO struct {
 	VisionAPIBaseURL        string `json:"visionApiBaseUrl"`
 	VisionAPIKeyOverride    string `json:"visionApiKeyOverride"`
 	UseVisionForTranslation bool   `json:"useVisionForTranslation"`
+	SourceLanguage          string `json:"sourceLanguage"`
+	TargetLanguage          string `json:"targetLanguage"`
 }
 
 func (a *App) initSettings() error {
@@ -336,6 +338,8 @@ func (a *App) ensureService() error {
 	options := translation.Options{
 		Stream:                  a.settings.EnableStreamOutput,
 		UseVisionForTranslation: a.settings.UseVisionForTranslation,
+		SourceLanguage:          a.settings.SourceLanguage,
+		TargetLanguage:          a.settings.TargetLanguage,
 	}
 
 	if a.translationSvc == nil || apiKey != a.currentAPIKey || baseURL != a.currentBaseURL || translateModel != a.currentTranslateModel || visionModel != a.currentVisionModel || visionAPIKey != a.currentVisionAPIKey || visionBaseURL != a.currentVisionBaseURL {
@@ -738,6 +742,8 @@ func fromConfigSettings(settings config.Settings) SettingsDTO {
 		VisionAPIBaseURL:        settings.VisionAPIBaseURL,
 		VisionAPIKeyOverride:    settings.VisionAPIKeyOverride,
 		UseVisionForTranslation: settings.UseVisionForTranslation,
+		SourceLanguage:          settings.SourceLanguage,
+		TargetLanguage:          settings.TargetLanguage,
 	}
 }
 
@@ -769,5 +775,7 @@ func toConfigSettings(dto SettingsDTO) config.Settings {
 	settings.VisionAPIBaseURL = strings.TrimSpace(dto.VisionAPIBaseURL)
 	settings.VisionAPIKeyOverride = strings.TrimSpace(dto.VisionAPIKeyOverride)
 	settings.UseVisionForTranslation = dto.UseVisionForTranslation
+	settings.SourceLanguage = strings.TrimSpace(dto.SourceLanguage)
+	settings.TargetLanguage = strings.TrimSpace(dto.TargetLanguage)
 	return settings
 }
