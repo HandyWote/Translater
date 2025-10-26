@@ -155,11 +155,11 @@ func (a *App) TranslateText(input string) (*UITranslationResult, error) {
 	}
 
 	streamEnabled := a.settings.EnableStreamOutput
-	var streamSuccess bool
 	if streamEnabled {
 		a.beginStream("manual", nil)
+		// 手动文本翻译不涉及overlay窗口，只需清理流状态
 		defer func() {
-			a.endStream(!streamSuccess)
+			a.endStream(false)
 		}()
 	}
 
@@ -191,7 +191,6 @@ func (a *App) TranslateText(input string) (*UITranslationResult, error) {
 
 	a.emit(eventTranslationResult, uiResult)
 	a.postProcessTranslation(uiResult.TranslatedText)
-	streamSuccess = true
 	return uiResult, nil
 }
 
@@ -478,12 +477,13 @@ func (a *App) computeOverlayRect(startX, startY, endX, endY int) overlay.Rect {
 
 func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 	streamEnabled := a.settings.EnableStreamOutput
-	var streamSuccess bool
 	if streamEnabled {
 		rect := a.computeOverlayRect(startX, startY, endX, endY)
 		a.beginStream("screenshot", &rect)
+		// 翻译完成后只清理流状态，不关闭overlay窗口
+		// overlay窗口由用户按ESC键手动关闭
 		defer func() {
-			a.endStream(!streamSuccess)
+			a.endStream(false)
 		}()
 	}
 
@@ -498,9 +498,7 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			"stage":   "screenshot",
 			"message": err.Error(),
 		})
-		if a.overlayMgr != nil {
-			a.overlayMgr.Close()
-		}
+		// 不自动关闭overlay，让用户可以看到错误信息并手动关闭
 		return false
 	}
 
@@ -528,9 +526,7 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			"message": "未检测到文字内容",
 		})
 		a.emit(eventTranslationIdle, nil)
-		if a.overlayMgr != nil {
-			a.overlayMgr.Close()
-		}
+		// 不自动关闭overlay，让用户手动关闭
 		return false
 	}
 
@@ -544,14 +540,14 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			"stage":   "translate",
 			"message": "翻译结果为空",
 		})
-		if a.overlayMgr != nil {
-			a.overlayMgr.Close()
-		}
+		// 不自动关闭overlay，让用户手动关闭
 		return false
 	}
 
 	a.emit(eventTranslationResult, uiResult)
 	a.postProcessTranslation(uiResult.TranslatedText)
+
+	// 显示或更新overlay窗口，窗口会一直保持显示直到用户按ESC关闭
 	if a.overlayMgr != nil && uiResult.Bounds != nil {
 		rect := overlay.Rect{
 			Left:   uiResult.Bounds.Left,
@@ -560,19 +556,22 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 			Height: uiResult.Bounds.Height,
 		}
 		if streamEnabled && a.isStreamOverlayActive() {
+			// 流式模式下，更新已存在的overlay
 			if err := a.overlayMgr.Update(uiResult.TranslatedText); err != nil {
 				a.logError(fmt.Sprintf("更新流式翻译浮窗失败: %v", err))
+				// 如果更新失败，尝试重新显示
 				if err := a.overlayMgr.Show(uiResult.TranslatedText, rect); err != nil {
 					a.logError(fmt.Sprintf("展示翻译浮窗失败: %v", err))
 				}
 			}
 		} else {
+			// 非流式模式或overlay未激活，直接显示新窗口
 			if err := a.overlayMgr.Show(uiResult.TranslatedText, rect); err != nil {
 				a.logError(fmt.Sprintf("展示翻译浮窗失败: %v", err))
 			}
 		}
 	}
-	streamSuccess = true
+
 	return true
 }
 
@@ -609,14 +608,22 @@ func (a *App) beginStream(source string, rect *overlay.Rect) {
 func (a *App) endStream(closeOverlay bool) {
 	a.streamMutex.Lock()
 	wasActive := a.streamActive
+	wasOverlayVisible := a.streamOverlayVisible
 	a.streamActive = false
 	a.streamSource = ""
 	a.streamHasRect = false
-	a.streamOverlayVisible = false
+	// 只有在需要关闭overlay时才重置可见状态
+	if closeOverlay {
+		a.streamOverlayVisible = false
+	}
 	a.streamMutex.Unlock()
 
+	// 如果需要关闭overlay且之前有活动的流，则关闭窗口
 	if closeOverlay && wasActive && a.overlayMgr != nil {
 		a.overlayMgr.Close()
+	} else if !closeOverlay && wasOverlayVisible {
+		// 流式传输成功完成，overlay应该保持显示，不做任何操作
+		// overlay窗口会通过用户按ESC键或其他方式手动关闭
 	}
 }
 
