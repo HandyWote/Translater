@@ -109,12 +109,21 @@ async function requestScreenshot() {
 	}
 }
 
+function hasConfiguredApiKey(state: SettingsState): boolean {
+	const baseKey = state.apiKeyOverride?.trim();
+	const visionKey = state.visionApiKeyOverride?.trim();
+	if (state.useVisionForTranslation) {
+		return Boolean(visionKey || baseKey);
+	}
+	return Boolean(baseKey);
+}
+
 async function loadSettings() {
 	try {
 		const dto = await GetSettings();
 		settings.value = mapSettings(dto);
 		applyTheme(settings.value.theme);
-		apiKeyMissing.value = !settings.value.apiKeyOverride;
+		apiKeyMissing.value = !hasConfiguredApiKey(settings.value);
 	} catch (error) {
 		pushToast('加载配置失败');
 		console.error(error);
@@ -126,7 +135,7 @@ async function saveSettings(nextSettings: SettingsState) {
 		const dto = await SaveSettings(toSettingsPayload(nextSettings));
 		settings.value = mapSettings(dto);
 		applyTheme(settings.value.theme);
-		apiKeyMissing.value = !settings.value.apiKeyOverride;
+		apiKeyMissing.value = !hasConfiguredApiKey(settings.value);
 		pushToast('设置已保存');
 	} catch (error) {
 		pushToast('保存设置失败');
@@ -198,13 +207,14 @@ const headerStatus = computed(() => {
 		apiKeyMissing.value = false;
 		pushToast('翻译服务已就绪', 2000);
 	});
-	registerEvent('settings:updated', (payload: any) => {
-		settings.value = mapSettings(payload);
-	});
-	registerEvent('settings:theme', (payload?: Record<string, any>) => {
-		const theme = payload?.theme || settings.value.theme;
-		settings.value = {...settings.value, theme};
-		applyTheme(theme);
+registerEvent('settings:updated', (payload: any) => {
+	settings.value = mapSettings(payload);
+	apiKeyMissing.value = !hasConfiguredApiKey(settings.value);
+});
+registerEvent('settings:theme', (payload?: Record<string, any>) => {
+	const theme = payload?.theme || settings.value.theme;
+	settings.value = {...settings.value, theme};
+	applyTheme(theme);
 	});
 
 	await loadSettings();

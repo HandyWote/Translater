@@ -1,6 +1,8 @@
 <script lang="ts" setup>
+import PanelShell from './base/PanelShell.vue';
+import HistoryEmptyState from './history/HistoryEmptyState.vue';
+import HistoryList from './history/HistoryList.vue';
 import type {TranslationResult} from '../types';
-import {formatDuration, formatTimestamp} from '../types';
 
 const props = defineProps<{
 	history: TranslationResult[];
@@ -17,141 +19,32 @@ function handleSelect(entry: TranslationResult) {
 </script>
 
 <template>
-	<section class="history">
-		<h2>翻译历史</h2>
-		<p class="intro">保留最近 40 条翻译记录，点击可重新查看结果。</p>
-		<div v-if="props.isEmpty" class="empty">
-			尚无记录，完成一次翻译后将在此展示。
-		</div>
-		<ul v-else class="history-list">
-			<li v-for="item in props.history" :key="item.timestamp + item.source" @click="handleSelect(item)">
-				<div class="meta">
-					<span class="source" :data-source="item.source">{{ item.source === 'screenshot' ? '截图' : '手动' }}</span>
-					<span class="time">{{ formatTimestamp(item.timestamp) }}</span>
-					<span v-if="item.durationMs" class="duration">{{ formatDuration(item.durationMs) }}</span>
-				</div>
-				<div class="preview">
-					<p class="original" :title="item.originalText">{{ item.originalText || '（空文本）' }}</p>
-					<p class="translated" :title="item.translatedText">{{ item.translatedText || '无翻译结果' }}</p>
-				</div>
-			</li>
-		</ul>
-	</section>
+	<PanelShell>
+		<header class="history-header">
+			<h2>翻译历史</h2>
+		</header>
+		<HistoryEmptyState v-if="props.isEmpty" />
+		<HistoryList v-else :items="props.history" @select="handleSelect" />
+	</PanelShell>
 </template>
 
 <style scoped>
-.history {
+.history-header {
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
+	gap: 0.35rem;
 	color: var(--color-text-primary);
 }
 
-h2 {
+.history-header h2 {
 	margin: 0;
 	font-size: 1.2rem;
 	font-weight: 600;
 }
 
-.intro {
+.history-header p {
 	margin: 0;
 	color: var(--color-text-tertiary);
 	font-size: 0.9rem;
-}
-
-.empty {
-	padding: 2rem;
-	text-align: center;
-	border-radius: 16px;
-	border: 1px dashed var(--border-subtle);
-	background: var(--surface-muted);
-	color: var(--color-text-secondary);
-}
-
-.history-list {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.8rem;
-}
-
-.history-list li {
-	padding: 0.9rem 1.1rem;
-	border-radius: 16px;
-	background: var(--surface-elevated);
-	border: 1px solid transparent;
-	box-shadow: 0 12px 24px rgba(10, 10, 30, 0.18);
-	cursor: pointer;
-	transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.history-list li:hover {
-	transform: translateY(-2px);
-	box-shadow: 0 18px 34px rgba(15, 15, 30, 0.22);
-	border-color: var(--border-subtle);
-}
-
-.meta {
-	display: flex;
-	gap: 0.8rem;
-	align-items: center;
-	font-size: 0.82rem;
-	color: var(--color-text-tertiary);
-}
-
-.source {
-	padding: 0.1rem 0.6rem;
-	border-radius: 999px;
-	background: var(--surface-hover);
-	text-transform: uppercase;
-	font-size: 0.7rem;
-	letter-spacing: 0.08em;
-}
-
-.source[data-source='screenshot'] {
-	background: rgba(20, 131, 255, 0.18);
-	color: #5bb1ff;
-}
-
-.source[data-source='manual'] {
-	background: rgba(90, 245, 195, 0.16);
-	color: #63d3a9;
-}
-
-.preview {
-	margin-top: 0.55rem;
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-	gap: 0.8rem;
-}
-
-.preview p {
-	margin: 0;
-	font-size: 0.92rem;
-	line-height: 1.45;
-	max-height: 4.2rem;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.original {
-	color: var(--color-text-secondary);
-}
-
-.translated {
-	color: var(--color-text-primary);
-	font-weight: 500;
-}
-
-.duration {
-	font-size: 0.75rem;
-}
-
-@media (max-width: 720px) {
-	.preview {
-		grid-template-columns: 1fr;
-	}
 }
 </style>
