@@ -147,52 +147,7 @@ func (a *App) runScreenshotCapture(done chan struct{}) {
 	}
 }
 
-// TranslateText 翻译纯文本
-func (a *App) TranslateText(input string) (*UITranslationResult, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return nil, fmt.Errorf("请输入要翻译的内容")
-	}
 
-	streamEnabled := a.settings.EnableStreamOutput
-	if streamEnabled {
-		a.beginStream("manual", nil)
-		// 手动文本翻译不涉及overlay窗口，只需清理流状态
-		defer func() {
-			a.endStream(false)
-		}()
-	}
-
-	if err := a.ensureService(); err != nil {
-		a.emit(eventTranslationError, map[string]string{
-			"stage":   "init",
-			"message": err.Error(),
-		})
-		return nil, err
-	}
-
-	a.emit(eventTranslationStarted, map[string]string{"source": "manual"})
-	result, err := a.translationSvc.TranslateText(trimmed)
-	if err != nil {
-		a.emit(eventTranslationError, map[string]string{
-			"stage":   "translate",
-			"message": err.Error(),
-		})
-		return nil, err
-	}
-
-	uiResult := &UITranslationResult{
-		OriginalText:   result.OriginalText,
-		TranslatedText: result.TranslatedText,
-		Source:         "manual",
-		Timestamp:      time.Now(),
-		DurationMs:     result.ProcessingTime.Milliseconds(),
-	}
-
-	a.emit(eventTranslationResult, uiResult)
-	a.postProcessTranslation(uiResult.TranslatedText)
-	return uiResult, nil
-}
 
 // GetSettings 返回当前配置
 func (a *App) GetSettings() (*SettingsDTO, error) {
@@ -477,13 +432,17 @@ func (a *App) computeOverlayRect(startX, startY, endX, endY int) overlay.Rect {
 
 func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 	streamEnabled := a.settings.EnableStreamOutput
+	shouldCleanup := false
 	if streamEnabled {
 		rect := a.computeOverlayRect(startX, startY, endX, endY)
 		a.beginStream("screenshot", &rect)
+		shouldCleanup = true
 		// 翻译完成后只清理流状态，不关闭overlay窗口
 		// overlay窗口由用户按ESC键手动关闭
 		defer func() {
-			a.endStream(false)
+			if shouldCleanup {
+				a.endStream(false)
+			}
 		}()
 	}
 
@@ -501,6 +460,7 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		// 不自动关闭overlay，让用户可以看到错误信息并手动关闭
 		return false
 	}
+
 
 	uiResult := &UITranslationResult{
 		OriginalText:   result.ExtractedText,
@@ -520,7 +480,13 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		},
 	}
 
-	if strings.TrimSpace(result.ExtractedText) == "" {
+	// 检查是否有有效内容（ExtractedText 或 TranslatedText 至少有一个非空）
+	// 在 useVisionForTranslation 模式下，ExtractedText 可能为空但 TranslatedText 有内容
+	hasExtractedText := strings.TrimSpace(result.ExtractedText) != ""
+	hasTranslatedText := strings.TrimSpace(result.TranslatedText) != ""
+
+	if !hasExtractedText && !hasTranslatedText {
+		a.logError("⚠️ [后端] OCR 和翻译结果都为空")
 		a.emit(eventTranslationProgress, map[string]string{
 			"stage":   "ocr",
 			"message": "未检测到文字内容",
@@ -530,12 +496,8 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		return false
 	}
 
-	a.emit(eventTranslationProgress, map[string]string{
-		"stage":   "translate",
-		"message": "正在翻译…",
-	})
-
-	if strings.TrimSpace(result.TranslatedText) == "" {
+	if !hasTranslatedText {
+		a.logError("⚠️ [后端] 翻译结果为空（但有提取的文本），发送 translation:error 事件")
 		a.emit(eventTranslationError, map[string]string{
 			"stage":   "translate",
 			"message": "翻译结果为空",
@@ -543,6 +505,24 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		// 不自动关闭overlay，让用户手动关闭
 		return false
 	}
+
+	a.emit(eventTranslationProgress, map[string]string{
+		"stage":   "translate",
+		"message": "翻译完成",
+	})
+
+	if streamEnabled {
+		a.endStream(false)
+		shouldCleanup = false
+	}
+
+	// 调试日志：打印即将发送的结果
+	preview := uiResult.TranslatedText
+	if len(preview) > 100 {
+		preview = preview[:100]
+	}
+	a.logError(fmt.Sprintf("🚀 [后端] 准备发送 translation:result, translatedText 长度: %d, 内容: %s",
+		len(uiResult.TranslatedText), preview))
 
 	a.emit(eventTranslationResult, uiResult)
 	a.postProcessTranslation(uiResult.TranslatedText)
@@ -608,7 +588,6 @@ func (a *App) beginStream(source string, rect *overlay.Rect) {
 func (a *App) endStream(closeOverlay bool) {
 	a.streamMutex.Lock()
 	wasActive := a.streamActive
-	wasOverlayVisible := a.streamOverlayVisible
 	a.streamActive = false
 	a.streamSource = ""
 	a.streamHasRect = false
@@ -621,9 +600,6 @@ func (a *App) endStream(closeOverlay bool) {
 	// 如果需要关闭overlay且之前有活动的流，则关闭窗口
 	if closeOverlay && wasActive && a.overlayMgr != nil {
 		a.overlayMgr.Close()
-	} else if !closeOverlay && wasOverlayVisible {
-		// 流式传输成功完成，overlay应该保持显示，不做任何操作
-		// overlay窗口会通过用户按ESC键或其他方式手动关闭
 	}
 }
 
@@ -638,7 +614,12 @@ func (a *App) handleStreamDelta(stage string, content string) {
 	hasRect := a.streamHasRect
 	rect := a.streamRect
 	overlayVisible := a.streamOverlayVisible
+	active := a.streamActive
 	a.streamMutex.Unlock()
+
+	if !active {
+		return
+	}
 
 	if source != "" {
 		payload["source"] = source

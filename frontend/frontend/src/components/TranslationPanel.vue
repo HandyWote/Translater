@@ -20,14 +20,23 @@ const emit = defineEmits<{
 }>();
 
 const displayText = computed(() => {
+	const finalText = props.currentResult?.translatedText ?? '';
+	if (finalText.trim()) {
+		return finalText;
+	}
 	const streamed = props.streamedText?.trim();
 	if (streamed) {
-		return streamed;
+		return props.streamedText;
 	}
-	return props.currentResult?.translatedText ?? '';
+	return '';
 });
 
-const streamingActive = computed(() => Boolean(props.streamedText?.trim()));
+const streamingActive = computed(() => {
+	if (props.currentResult?.translatedText?.trim()) {
+		return false;
+	}
+	return Boolean(props.streamedText?.trim());
+});
 const durationText = computed(() => (props.currentResult ? formatDuration(props.currentResult.durationMs) : ''));
 
 function handleStart() {

@@ -13,7 +13,3 @@ export function SaveSettings(arg1) {
 export function StartScreenshotTranslation() {
   return window['go']['main']['App']['StartScreenshotTranslation']();
 }
-
-export function TranslateText(arg1) {
-  return window['go']['main']['App']['TranslateText'](arg1);
-}

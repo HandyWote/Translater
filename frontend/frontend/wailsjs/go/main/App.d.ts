@@ -7,5 +7,3 @@ export function GetSettings():Promise<main.SettingsDTO>;
 export function SaveSettings(arg1:main.SettingsDTO):Promise<main.SettingsDTO>;
 
 export function StartScreenshotTranslation():Promise<void>;
-
-export function TranslateText(arg1:string):Promise<main.UITranslationResult>;

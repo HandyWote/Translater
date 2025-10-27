@@ -20,6 +20,7 @@ const isBusy = ref(false);
 const apiKeyMissing = ref(false);
 const settings = ref<SettingsState>(defaultSettingsState());
 const registeredEvents = new Set<string>();
+const isTranslationComplete = ref(false);
 
 interface ToastItem {
 	id: number;
@@ -74,10 +75,24 @@ function addHistoryEntry(entry: TranslationResult) {
 }
 
 function handleTranslationResult(payload: any) {
+	console.log('🔵 [handleTranslationResult] 接收到结果:', payload);
+	isTranslationComplete.value = true;
+	const streamedSnapshot = liveTranslatedText.value.trim();
+	const streamedSource = liveStreamSource.value;
+	console.log('🔵 [handleTranslationResult] 流式快照:', streamedSnapshot.substring(0, 50));
 	resetStreaming();
 	const mapped = mapTranslationResult(payload);
+	if (!mapped.translatedText?.trim() && streamedSnapshot) {
+		console.log('🟡 [handleTranslationResult] 使用流式快照作为结果');
+		mapped.translatedText = streamedSnapshot;
+	}
+	if (!mapped.source && streamedSource) {
+		mapped.source = streamedSource;
+	}
+	console.log('🔵 [handleTranslationResult] 设置 currentResult:', mapped.translatedText.substring(0, 50));
 	currentResult.value = mapped;
 	addHistoryEntry(mapped);
+	console.log('🔵 [handleTranslationResult] 历史记录数量:', history.value.length);
 	isBusy.value = false;
 	statusMessage.value = {stage: 'done', message: '翻译完成'};
 	activeTab.value = 'translate';
@@ -158,6 +173,7 @@ const headerStatus = computed(() => {
 
 	onMounted(async () => {
 	registerEvent('translation:started', (payload?: Record<string, any>) => {
+		isTranslationComplete.value = false;
 		resetStreaming();
 		isBusy.value = true;
 		const source = payload?.source || 'translation';
@@ -169,6 +185,7 @@ const headerStatus = computed(() => {
 		statusMessage.value = {stage, message};
 	});
 	registerEvent('translation:result', (payload: any) => {
+		console.log('📥 [translation:result] 事件触发, payload:', payload);
 		handleTranslationResult(payload);
 	});
 	registerEvent('translation:error', (payload?: Record<string, any>) => {
@@ -177,8 +194,13 @@ const headerStatus = computed(() => {
 		handleTranslationError(stage, message);
 	});
 	registerEvent('translation:delta', (payload?: Record<string, any>) => {
+		if (isTranslationComplete.value) {
+			console.log('⚠️ [translation:delta] 翻译已完成,忽略延迟的 delta');
+			return;
+		}
 		const content = typeof payload?.content === 'string' ? payload.content : '';
 		const source = payload?.source as TranslationSource | undefined;
+		console.log('🟢 [translation:delta] 更新流式文本:', content.substring(0, 50));
 		liveTranslatedText.value = content;
 		if (source) {
 			liveStreamSource.value = source;
@@ -187,8 +209,10 @@ const headerStatus = computed(() => {
 		}
 	});
 	registerEvent('translation:idle', () => {
+		console.log('🔴 [translation:idle] 接收到 idle 事件, currentResult:', currentResult.value?.translatedText?.substring(0, 50));
 		resetStreaming();
 		isBusy.value = false;
+		console.log('🔴 [translation:idle] 清空后, currentResult:', currentResult.value?.translatedText?.substring(0, 50));
 	});
 	registerEvent('translation:copied', (payload?: Record<string, any>) => {
 		if (!settings.value.showToastOnComplete) {

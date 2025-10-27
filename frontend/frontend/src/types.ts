@@ -210,30 +210,42 @@ export function defaultSettingsState(): SettingsState {
 	};
 }
 
-export function mapTranslationResult(data: main.UITranslationResult | any): TranslationResult {
-	const converted = data instanceof main.UITranslationResult ? data : main.UITranslationResult.createFrom(data);
-	const timestamp = converted.timestamp instanceof Date ? converted.timestamp : new Date(converted.timestamp ?? Date.now());
-	const rawBounds: any = (converted as any).bounds;
-	const bounds = rawBounds
-		? {
-			startX: Number(rawBounds.startX) || 0,
-			startY: Number(rawBounds.startY) || 0,
-			endX: Number(rawBounds.endX) || 0,
-			endY: Number(rawBounds.endY) || 0,
-			left: Number(rawBounds.left) || 0,
-			top: Number(rawBounds.top) || 0,
-			width: Number(rawBounds.width) || 1,
-			height: Number(rawBounds.height) || 1,
-		}
-		: undefined;
-	return {
-		originalText: converted.originalText ?? '',
-		translatedText: converted.translatedText ?? '',
-		source: (converted.source as TranslationSource) ?? 'manual',
-		timestamp: timestamp.toISOString(),
-		durationMs: Number.isFinite(converted.durationMs) ? converted.durationMs : 0,
-		bounds,
-	};
+export function mapTranslationResult(data: any): TranslationResult {
+	try {
+		console.log('📦 [mapTranslationResult] 原始数据:', data);
+		// 从事件传来的数据是普通 JSON 对象，不需要类型转换
+		const timestamp = data.timestamp instanceof Date ? data.timestamp : new Date(data.timestamp ?? Date.now());
+		console.log('📦 [mapTranslationResult] timestamp 对象:', timestamp);
+		const rawBounds: any = data.bounds;
+		const bounds = rawBounds
+			? {
+				startX: Number(rawBounds.startX) || 0,
+				startY: Number(rawBounds.startY) || 0,
+				endX: Number(rawBounds.endX) || 0,
+				endY: Number(rawBounds.endY) || 0,
+				left: Number(rawBounds.left) || 0,
+				top: Number(rawBounds.top) || 0,
+				width: Number(rawBounds.width) || 1,
+				height: Number(rawBounds.height) || 1,
+			}
+			: undefined;
+		console.log('📦 [mapTranslationResult] bounds 处理完成');
+		const result = {
+			originalText: data.originalText ?? '',
+			translatedText: data.translatedText ?? '',
+			source: (data.source as TranslationSource) ?? 'manual',
+			timestamp: timestamp.toISOString(),
+			durationMs: Number.isFinite(data.durationMs) ? data.durationMs : 0,
+			bounds,
+		};
+		console.log('📦 [mapTranslationResult] result 对象创建完成');
+		const preview = result.translatedText.length > 100 ? result.translatedText.substring(0, 100) : result.translatedText;
+		console.log('📦 [mapTranslationResult] 最终结果 translatedText:', preview);
+		return result;
+	} catch (error) {
+		console.error('❌ [mapTranslationResult] 发生错误:', error);
+		throw error;
+	}
 }
 
 export function mapSettings(data: main.SettingsDTO | any): SettingsState {
