@@ -1,0 +1,146 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: '1.24.x'
+  NODE_VERSION: '18'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      - name: Run Go unit tests
+        run: go test ./...
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend/frontend
+
+      - name: Build frontend assets
+        run: npm run build
+        working-directory: frontend/frontend
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          $version = $env:GITHUB_REF_NAME
+          if (-not $version) {
+            Write-Error "未检测到标签名称"
+            exit 1
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build portable executable
+        run: wails build -clean -platform windows/amd64
+        working-directory: frontend
+
+      - name: Package portable build
+        run: |
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          Copy-Item frontend\build\bin\frontend.exe release\Translater.exe -Force
+          $portable = "Translater-${{ steps.version.outputs.value }}-windows-portable.zip"
+          if (Test-Path $portable) { Remove-Item $portable -Force }
+          Compress-Archive -Path release\Translater.exe -DestinationPath $portable
+
+      - name: Build NSIS installer
+        run: wails build -nsis -platform windows/amd64
+        working-directory: frontend
+
+      - name: Collect installer artifact
+        run: |
+          $installer = Get-ChildItem -Path frontend\build\bin -Filter '*installer.exe' | Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "未找到 NSIS 安装包"
+            exit 1
+          }
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          Copy-Item $installer.FullName "release\Translater-${{ steps.version.outputs.value }}-Setup.exe" -Force
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          $prevTag = git describe --tags --abbrev=0 HEAD^ 2>$null
+          if (-not $prevTag) {
+            $prevTag = git rev-list --max-parents=0 HEAD
+          }
+          $log = git log --pretty=format:"- %s" $prevTag..HEAD
+          if (-not $log) {
+            $log = "- 初始发布"
+          }
+          "changelog<<EOF" >> $env:GITHUB_OUTPUT
+          $log >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.value }}
+          name: Translater ${{ steps.version.outputs.value }}
+          body: |
+            ## 🚀 Translater ${{ steps.version.outputs.value }}
+
+            ### 📦 下载指南
+
+            - **Translater-Setup.exe**：安装程序，创建快捷方式并带卸载（推荐）
+            - **Translater-windows-portable.zip**：便携版，解压即可运行
+
+            ### ✨ 更新内容
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### 💡 使用提示
+
+            1. 下载并安装或解压对应版本
+            2. 使用 `Alt+T` 快捷键启动截图翻译
+            3. 在“设置”中配置自己的 API Key
+
+            ---
+
+            > ⚠️ 本项目仅供学习与个人使用，请勿用于商业用途
+          files: |
+            Translater-${{ steps.version.outputs.value }}-windows-portable.zip
+            release/Translater-${{ steps.version.outputs.value }}-Setup.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-files
+          path: |
+            Translater-${{ steps.version.outputs.value }}-windows-portable.zip
+            release/Translater-${{ steps.version.outputs.value }}-Setup.exe
+          retention-days: 30
