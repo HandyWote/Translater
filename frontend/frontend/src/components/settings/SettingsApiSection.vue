@@ -18,19 +18,19 @@ const form = useSettingsForm();
 			<label class="settings-field">
 				<span>视觉 API Key</span>
 				<input v-model="form.visionApiKeyOverride" type="password" placeholder="sk-xxxxxxxx" autocomplete="off" />
-				<small>默认用于视觉直出调用，如启用文本模型可再单独配置翻译 Key。</small>
+				<small>用于 OCR 文字识别（必填）。视觉直出模式下也用于翻译。</small>
 			</label>
 			<label v-if="props.showTranslateFields" class="settings-field">
 				<span>翻译 API Key</span>
-				<input v-model="form.apiKeyOverride" type="password" placeholder="sk-xxxxxxxx" autocomplete="off" />
-				<small>保存后即时生效，仅存储于当前用户配置目录。</small>
+				<input v-model="form.apiKeyOverride" type="password" placeholder="留空则使用视觉 API Key" autocomplete="off" />
+				<small>用于文本翻译。留空则使用视觉 API Key（适合单一 API 提供商）。</small>
 			</label>
 		</div>
 		<div class="settings-grid__row">
 			<label class="settings-field">
 				<span>视觉 API Base URL</span>
 				<input v-model="form.visionApiBaseUrl" type="text" :placeholder="DEFAULT_API_BASE_URL" autocomplete="off" />
-				<small>请输入兼容 OpenAI Chat Completions 的接口地址，结尾无需斜杠。</small>
+				<small>兼容 OpenAI Chat Completions 的接口地址，结尾无需斜杠。</small>
 			</label>
 			<label v-if="props.showTranslateFields" class="settings-field">
 				<span>翻译 API Base URL</span>

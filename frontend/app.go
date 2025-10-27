@@ -263,7 +263,8 @@ func (a *App) ensureService() error {
 		return err
 	}
 
-	apiKey, err := a.resolveAPIKey()
+	// 使用新的 API Key 解析逻辑
+	mainKey, translateKey, err := a.resolveAPIKeys()
 	if err != nil {
 		a.disableHotkey()
 		return err
@@ -278,10 +279,9 @@ func (a *App) ensureService() error {
 	if visionModel == "" {
 		visionModel = ai.DefaultVisionModel
 	}
-	visionAPIKey := strings.TrimSpace(a.settings.VisionAPIKeyOverride)
-	if visionAPIKey == "" {
-		visionAPIKey = apiKey
-	}
+
+	// 视觉 API 配置（使用主 key）
+	visionAPIKey := mainKey
 	visionBaseURL := strings.TrimSpace(a.settings.VisionAPIBaseURL)
 	if visionBaseURL == "" {
 		visionBaseURL = baseURL
@@ -296,10 +296,10 @@ func (a *App) ensureService() error {
 		TargetLanguage:          a.settings.TargetLanguage,
 	}
 
-	if a.translationSvc == nil || apiKey != a.currentAPIKey || baseURL != a.currentBaseURL || translateModel != a.currentTranslateModel || visionModel != a.currentVisionModel || visionAPIKey != a.currentVisionAPIKey || visionBaseURL != a.currentVisionBaseURL {
+	if a.translationSvc == nil || translateKey != a.currentAPIKey || baseURL != a.currentBaseURL || translateModel != a.currentTranslateModel || visionModel != a.currentVisionModel || visionAPIKey != a.currentVisionAPIKey || visionBaseURL != a.currentVisionBaseURL {
 		a.translationSvc = translation.NewService(
 			ai.NewClient(ai.ClientConfig{
-				APIKey:         apiKey,
+				APIKey:         translateKey,
 				BaseURL:        baseURL,
 				TranslateModel: translateModel,
 				VisionModel:    visionModel,
@@ -310,7 +310,7 @@ func (a *App) ensureService() error {
 			a.settings.TranslatePrompt,
 			options,
 		)
-		a.currentAPIKey = apiKey
+		a.currentAPIKey = translateKey
 		a.currentBaseURL = baseURL
 		a.currentTranslateModel = translateModel
 		a.currentVisionModel = visionModel
@@ -691,12 +691,37 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 }
 
-func (a *App) resolveAPIKey() (string, error) {
-	if key := strings.TrimSpace(a.settings.APIKeyOverride); key != "" {
-		return key, nil
+// resolveAPIKeys 根据 useVisionForTranslation 设置解析主 API Key 和翻译 API Key
+// 主 API Key 优先从 visionApiKeyOverride 读取（向前兼容），翻译 API Key 根据模式决定
+func (a *App) resolveAPIKeys() (mainKey string, translateKey string, err error) {
+	// 1. 解析主 API Key（视觉 API Key 优先）
+	mainKey = strings.TrimSpace(a.settings.VisionAPIKeyOverride)
+	if mainKey == "" {
+		// 向后兼容：回退到 apiKeyOverride
+		mainKey = strings.TrimSpace(a.settings.APIKeyOverride)
 	}
-	reader := config.NewFileAPIKeyReader([]string{".env", "env", "../.env", "../env"})
-	return reader.ReadAPIKey()
+	if mainKey == "" {
+		// 最后尝试从文件读取
+		reader := config.NewFileAPIKeyReader([]string{".env", "env", "../.env", "../env"})
+		mainKey, err = reader.ReadAPIKey()
+		if err != nil || mainKey == "" {
+			return "", "", fmt.Errorf("需要配置视觉 API Key (visionApiKeyOverride) 或在 .env 文件中设置")
+		}
+	}
+
+	// 2. 解析翻译 API Key
+	if a.settings.UseVisionForTranslation {
+		// 视觉直出模式：翻译也用主 key
+		translateKey = mainKey
+	} else {
+		// 文本模型模式：翻译 key 可选，留空则回退到主 key
+		translateKey = strings.TrimSpace(a.settings.APIKeyOverride)
+		if translateKey == "" {
+			translateKey = mainKey
+		}
+	}
+
+	return mainKey, translateKey, nil
 }
 
 func (a *App) emit(event string, payload interface{}) {

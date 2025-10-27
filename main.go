@@ -26,27 +26,47 @@ func main() {
 		settings = loaded
 	}
 
-	apiKey := strings.TrimSpace(settings.APIKeyOverride)
-	if apiKey != "" {
-		fmt.Println("Using API key from settings override")
-	} else {
-		// 读取API密钥
+	// 解析主 API Key（视觉 API Key 优先）
+	mainKey := strings.TrimSpace(settings.VisionAPIKeyOverride)
+	if mainKey == "" {
+		// 向后兼容：回退到 apiKeyOverride
+		mainKey = strings.TrimSpace(settings.APIKeyOverride)
+	}
+	if mainKey == "" {
+		// 最后尝试从文件读取
 		var err error
-		apiKey, err = apiKeyReader.ReadAPIKey()
-		if err != nil {
-			log.Fatal("Could not load API key from any source")
+		mainKey, err = apiKeyReader.ReadAPIKey()
+		if err != nil || mainKey == "" {
+			log.Fatal("需要配置视觉 API Key (visionApiKeyOverride) 或在 .env 文件中设置")
 		}
 		fmt.Println("Successfully read API key from file")
+	} else {
+		if strings.TrimSpace(settings.VisionAPIKeyOverride) != "" {
+			fmt.Println("Using vision API key from settings")
+		} else {
+			fmt.Println("Using API key from settings override")
+		}
 	}
 
-	if apiKey == "" {
-		log.Fatal("API key is empty")
+	// 解析翻译 API Key
+	var translateKey string
+	if settings.UseVisionForTranslation {
+		// 视觉直出模式：翻译也用主 key
+		translateKey = mainKey
+		fmt.Println("Vision-only mode: using vision API key for translation")
+	} else {
+		// 文本模型模式：翻译 key 可选，留空则回退到主 key
+		translateKey = strings.TrimSpace(settings.APIKeyOverride)
+		if translateKey == "" {
+			translateKey = mainKey
+			fmt.Println("Text model mode: translation API key falls back to vision API key")
+		} else {
+			fmt.Println("Text model mode: using separate translation API key")
+		}
 	}
 
-	visionAPIKey := strings.TrimSpace(settings.VisionAPIKeyOverride)
-	if visionAPIKey == "" {
-		visionAPIKey = apiKey
-	}
+	// 视觉 API 配置
+	visionAPIKey := mainKey
 	visionBaseURL := strings.TrimSpace(settings.VisionAPIBaseURL)
 	if visionBaseURL == "" {
 		visionBaseURL = settings.APIBaseURL
@@ -60,7 +80,7 @@ func main() {
 
 	// 创建AI客户端
 	aiClient := ai.NewClient(ai.ClientConfig{
-		APIKey:         apiKey,
+		APIKey:         translateKey,
 		BaseURL:        settings.APIBaseURL,
 		TranslateModel: settings.TranslateModel,
 		VisionModel:    settings.VisionModel,
