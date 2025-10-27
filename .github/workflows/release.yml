@@ -1,0 +1,63 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/frontend/package-lock.json
+        
+    - name: Install Wails CLI
+      run: |
+        go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        
+    - name: Install dependencies
+      run: |
+        go mod download
+        cd frontend/frontend
+        npm install
+        
+    - name: Build Wails application
+      run: |
+        cd frontend
+        wails build -clean
+    
+    - name: rename the exe files
+      run: |
+        cd frontend/build/bin
+        cp frontend.exe Translater-${{ github.ref_name }}.exe
+        
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Translater ${{ github.ref_name }}
+        body: |
+          ## 🚀 Translater ${{ github.ref_name }}
+          
+          ### 📦 下载说明
+            - 程序下载之后无需安装，双击exe文件配置apikey后即可直接使用。
+        files: |
+          frontend/build/bin/Translater-${{ github.ref_name }}.exe
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
