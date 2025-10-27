@@ -334,6 +334,7 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 		if font != 0 {
 			textHeight := ow.measureTextHeight(hdc, font, int(inner.Right-inner.Left))
 			availableHeight := int(drawRect.Bottom - drawRect.Top)
+
 			if textHeight > 0 && availableHeight > textHeight {
 				offset := int32((availableHeight - textHeight) / 2)
 				if offset > 0 {
@@ -344,6 +345,13 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 					}
 				}
 			}
+
+			// 确保有足够的绘制空间（防止文字被截断）
+			effectiveHeight := drawRect.Bottom - drawRect.Top
+			if textHeight > int(effectiveHeight) {
+				drawRect.Bottom = drawRect.Top + int32(textHeight)
+			}
+
 			previous = win.SelectObject(hdc, win.HGDIOBJ(font))
 			defer win.SelectObject(hdc, previous)
 		}
@@ -395,11 +403,30 @@ func (ow *overlayWindow) updateLayout() {
 		contentHeight = innerMaxHeight
 	}
 
+	// 检查是否需要滚动条
+	needScroll := contentHeight > innerMaxHeight
+
+	// 如果需要滚动条，用减去滚动条宽度后的宽度重新测量
+	scrollbarWidth := int32(17) // Windows 标准滚动条宽度
+	if needScroll {
+		innerWidthWithScrollbar := innerWidth - scrollbarWidth
+		if innerWidthWithScrollbar < 1 {
+			innerWidthWithScrollbar = 1
+		}
+
+		// 用新宽度重新测量
+		_, remeasuredHeight := ow.measureText(hdc, font, int(innerWidthWithScrollbar))
+		if remeasuredHeight > 0 {
+			contentHeight = int32(remeasuredHeight)
+		}
+	}
+
 	innerHeight := contentHeight
 	lineHeight := ow.lineHeight(hdc, font)
 	if lineHeight <= 0 {
 		lineHeight = 1
 	}
+
 	if innerHeight < innerMaxHeight {
 		allowance := innerMaxHeight - innerHeight
 		extra := lineHeight
@@ -412,7 +439,6 @@ func (ow *overlayWindow) updateLayout() {
 		innerHeight = innerMaxHeight
 	}
 
-	needScroll := contentHeight > innerMaxHeight
 	if needScroll {
 		innerHeight = innerMaxHeight
 	}
@@ -432,6 +458,7 @@ func (ow *overlayWindow) updateLayout() {
 	ow.rect.Height = int(outHeight)
 	ow.viewHeight = innerHeight
 	ow.contentHeight = contentHeight
+
 	if needScroll {
 		ow.enableScrollbar()
 	} else {
@@ -563,6 +590,7 @@ func (ow *overlayWindow) applyScrollPos(pos int32) {
 		pos = maxPos
 	}
 	ow.scrollPos = pos
+
 	var si win.SCROLLINFO
 	si.CbSize = uint32(unsafe.Sizeof(si))
 	si.FMask = win.SIF_POS
