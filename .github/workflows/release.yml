@@ -51,7 +51,7 @@ jobs:
         tag_name: ${{ github.ref_name }}
         name: Translater ${{ github.ref_name }}
         body: |
-          ## 🚀 Translater ${{ github.ref_name }}
+          ## 🚀 Translater-${{ github.ref_name }}
           
           ### 📦 下载说明
             - 程序下载之后无需安装，双击exe文件配置apikey后即可直接使用。
