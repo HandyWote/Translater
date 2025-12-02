@@ -147,8 +147,7 @@ func (ow *overlayWindow) UpdateText(text string) error {
 	ow.fontRectHeight = 0
 	ow.contentHeight = 0
 	ow.updateLayout()
-	win.InvalidateRect(ow.hwnd, nil, true)
-	win.UpdateWindow(ow.hwnd)
+	ow.requestRepaint()
 	return nil
 }
 
@@ -304,13 +303,45 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 
 	var rect win.RECT
 	win.GetClientRect(hwnd, &rect)
+	width := rect.Right - rect.Left
+	height := rect.Bottom - rect.Top
+	if width <= 0 || height <= 0 {
+		return
+	}
+
+	targetDC := hdc
+	var (
+		memDC      win.HDC
+		bitmap     win.HBITMAP
+		previousBm win.HGDIOBJ
+		useBuffer  bool
+	)
+	memDC = win.CreateCompatibleDC(hdc)
+	if memDC != 0 {
+		bitmap = win.CreateCompatibleBitmap(hdc, width, height)
+		if bitmap != 0 {
+			previousBm = win.SelectObject(memDC, win.HGDIOBJ(bitmap))
+			targetDC = memDC
+			useBuffer = true
+		} else {
+			win.DeleteDC(memDC)
+			memDC = 0
+		}
+	}
+	if useBuffer {
+		defer func() {
+			win.SelectObject(memDC, previousBm)
+			win.DeleteObject(win.HGDIOBJ(bitmap))
+			win.DeleteDC(memDC)
+		}()
+	}
 
 	bgBrush, err := createSolidBrush(win.RGB(20, 24, 32))
 	if err != nil {
 		return
 	}
 	defer win.DeleteObject(win.HGDIOBJ(bgBrush))
-	fillRect(hdc, &rect, bgBrush)
+	fillRect(targetDC, &rect, bgBrush)
 
 	inner := rect
 	pad := int32(windowPadding)
@@ -323,16 +354,16 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 		inner.Bottom -= pad
 	}
 
-	win.SetBkMode(hdc, win.TRANSPARENT)
-	win.SetTextColor(hdc, win.RGB(240, 247, 255))
+	win.SetBkMode(targetDC, win.TRANSPARENT)
+	win.SetTextColor(targetDC, win.RGB(240, 247, 255))
 	if len(ow.textUTF16) > 0 {
-		font := ow.ensureFittingFont(hdc, &inner)
+		font := ow.ensureFittingFont(targetDC, &inner)
 		drawRect := inner
 		drawRect.Top -= ow.scrollPos
 		drawRect.Bottom -= ow.scrollPos
 		var previous win.HGDIOBJ
 		if font != 0 {
-			textHeight := ow.measureTextHeight(hdc, font, int(inner.Right-inner.Left))
+			textHeight := ow.measureTextHeight(targetDC, font, int(inner.Right-inner.Left))
 			availableHeight := int(drawRect.Bottom - drawRect.Top)
 
 			if textHeight > 0 && availableHeight > textHeight {
@@ -352,10 +383,14 @@ func (ow *overlayWindow) onPaint(hwnd win.HWND) {
 				drawRect.Bottom = drawRect.Top + int32(textHeight)
 			}
 
-			previous = win.SelectObject(hdc, win.HGDIOBJ(font))
-			defer win.SelectObject(hdc, previous)
+			previous = win.SelectObject(targetDC, win.HGDIOBJ(font))
+			defer win.SelectObject(targetDC, previous)
 		}
-		win.DrawTextEx(hdc, &ow.textUTF16[0], -1, &drawRect, win.DT_LEFT|win.DT_WORDBREAK|win.DT_NOPREFIX, nil)
+		win.DrawTextEx(targetDC, &ow.textUTF16[0], -1, &drawRect, win.DT_LEFT|win.DT_WORDBREAK|win.DT_NOPREFIX, nil)
+	}
+
+	if useBuffer {
+		win.BitBlt(hdc, 0, 0, width, height, targetDC, 0, 0, win.SRCCOPY)
 	}
 }
 
@@ -596,7 +631,14 @@ func (ow *overlayWindow) applyScrollPos(pos int32) {
 	si.FMask = win.SIF_POS
 	si.NPos = pos
 	win.SetScrollInfo(ow.hwnd, win.SB_VERT, &si, true)
-	win.InvalidateRect(ow.hwnd, nil, true)
+	ow.requestRepaint()
+}
+
+func (ow *overlayWindow) requestRepaint() {
+	if ow.hwnd == 0 {
+		return
+	}
+	win.RedrawWindow(ow.hwnd, nil, 0, win.RDW_INVALIDATE|win.RDW_UPDATENOW|win.RDW_NOERASE)
 }
 
 func lowWord(v uint32) uint16 {
