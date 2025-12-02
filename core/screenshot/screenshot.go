@@ -63,6 +63,12 @@ func (m *Manager) StartOnce() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 
+	preview := newSelectionPreview()
+	if err := preview.Start(); err != nil {
+		fmt.Printf("选区预览启动失败: %v\n", err)
+		preview = nil
+	}
+
 	m.mu.Lock()
 	m.cancel = cancel
 	m.done = done
@@ -77,6 +83,9 @@ func (m *Manager) StartOnce() {
 		}
 		m.mu.Unlock()
 		close(done)
+		if preview != nil {
+			preview.Close()
+		}
 	}()
 
 	evChan := hook.Start()
@@ -118,16 +127,24 @@ func (m *Manager) StartOnce() {
 			}
 
 			switch ev.Kind {
-			case 7: // 鼠标按下
+			case hook.MouseDown: // 鼠标按下
 				if ev.Button == hook.MouseMap["left"] {
 					startX, startY = int(ev.X), int(ev.Y)
 					mousePressed = true
+					if preview != nil {
+						preview.Update(startX, startY, startX, startY, true)
+					}
 					fmt.Printf("鼠标按下: (%d, %d)\n", startX, startY)
 				}
-			case 8: // 鼠标释放
+			case hook.MouseHold, hook.MouseUp: // 鼠标释放（兼容旧逻辑）
 				if ev.Button == hook.MouseMap["left"] && mousePressed {
 					endX, endY = int(ev.X), int(ev.Y)
 					mousePressed = false
+					if preview != nil {
+						preview.Update(startX, startY, endX, endY, false)
+						preview.Close()
+						preview = nil
+					}
 					fmt.Printf("鼠标释放: (%d, %d)\n", endX, endY)
 
 					handler := m.getCaptureHandler()
@@ -144,13 +161,17 @@ func (m *Manager) StartOnce() {
 						return
 					}
 				}
+			case hook.MouseMove, hook.MouseDrag:
+				if mousePressed && preview != nil {
+					preview.Update(startX, startY, int(ev.X), int(ev.Y), true)
+				}
 			case 4: // 按下Esc键取消截图
 				if ev.Keycode == hook.Keycode["esc"] {
 					fmt.Println("截图已取消")
 					fmt.Println("截图监听已结束，等待下次热键触发...")
 					return
 				}
-			case 10: // 其他事件
+			default:
 				// 忽略其他事件
 			}
 		}
