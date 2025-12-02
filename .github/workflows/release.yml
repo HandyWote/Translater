@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
       
     - name: Setup Go
       uses: actions/setup-go@v4
@@ -26,8 +28,7 @@ jobs:
         cache-dependency-path: frontend/frontend/package-lock.json
         
     - name: Install Wails CLI
-      run: |
-        go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
         
     - name: Install dependencies
       run: |
@@ -40,7 +41,7 @@ jobs:
         cd frontend
         wails build -clean
     
-    - name: rename the exe files
+    - name: Rename the exe files
       run: |
         cd frontend/build/bin
         cp frontend.exe Translater-${{ github.ref_name }}.exe
@@ -49,15 +50,11 @@ jobs:
       id: commits
       shell: pwsh
       run: |
-        git fetch --tags --force
         $currentTag = "${{ github.ref_name }}"
-        $previousTag = ""
-        try {
-          $previousTag = git describe --tags --abbrev=0 "$currentTag^"
-        } catch {
-          $previousTag = ""
-        }
-        if ([string]::IsNullOrEmpty($previousTag)) {
+        
+        $previousTag = git describe --tags --abbrev=0 "${currentTag}^" 2>$null
+        
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($previousTag)) {
           $log = "首次发布，暂无历史 Commit。"
         } else {
           $logEntries = git log "$previousTag..$currentTag" --pretty=format:"- %s (%h)"
@@ -67,9 +64,10 @@ jobs:
             $log = "自 $previousTag 起无新的 Commit。"
           }
         }
-        $log = $log -replace "`r", ""
-        $output = @("log<<'EOF'", $log, "EOF")
-        $output | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        
+        "LOG<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        $log | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
@@ -80,12 +78,11 @@ jobs:
           ## 🚀 Translater-${{ github.ref_name }}
           
           ### 📦 下载说明
-            - 程序下载之后无需安装，双击exe文件配置apikey后即可直接使用。
+          - 程序下载之后无需安装，双击exe文件配置apikey后即可直接使用。
           
           ### 📝 更新内容
-          ${{ steps.commits.outputs.log }}
-        files: |
-          frontend/build/bin/Translater-${{ github.ref_name }}.exe
+          ${{ steps.commits.outputs.LOG }}
+        files: frontend/build/bin/Translater-${{ github.ref_name }}.exe
         draft: false
         prerelease: false
       env:
