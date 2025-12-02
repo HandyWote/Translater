@@ -1,6 +1,7 @@
 package translation
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -13,8 +14,11 @@ import (
 // Service 翻译服务接口
 type Service interface {
 	ProcessScreenshot(startX, startY, endX, endY int) bool
+	ProcessScreenshotWithContext(ctx context.Context, startX, startY, endX, endY int) bool
 	ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error)
+	ProcessScreenshotDetailedWithContext(ctx context.Context, startX, startY, endX, endY int) (*ScreenshotTranslationResult, error)
 	TranslateText(input string) (*TextTranslationResult, error)
+	TranslateTextWithContext(ctx context.Context, input string) (*TextTranslationResult, error)
 	UpdatePrompts(extract, translate string)
 	UpdateOptions(opts Options)
 	SetStreamHandler(handler StreamHandler)
@@ -122,10 +126,19 @@ func newScreenshotBounds(startX, startY, endX, endY int) ScreenshotBounds {
 
 // ProcessScreenshot 处理截图：截图->提取文字->翻译
 func (s *ServiceImpl) ProcessScreenshot(startX, startY, endX, endY int) bool {
+	return s.ProcessScreenshotWithContext(context.Background(), startX, startY, endX, endY)
+}
+
+// ProcessScreenshotWithContext 处理截图：截图->提取文字->翻译（可取消）
+func (s *ServiceImpl) ProcessScreenshotWithContext(ctx context.Context, startX, startY, endX, endY int) bool {
 	fmt.Println("开始处理截图...")
 
-	result, err := s.ProcessScreenshotDetailed(startX, startY, endX, endY)
-	if err != nil {
+	result, err := s.ProcessScreenshotDetailedWithContext(ctx, startX, startY, endX, endY)
+	switch {
+	case err == context.Canceled:
+		fmt.Println("截图处理已取消")
+		return false
+	case err != nil:
 		fmt.Printf("截图处理失败: %v\n", err)
 		return false
 	}
@@ -143,6 +156,11 @@ func (s *ServiceImpl) ProcessScreenshot(startX, startY, endX, endY int) bool {
 
 // ProcessScreenshotDetailed 执行截图、OCR、翻译并返回完整结果
 func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) (*ScreenshotTranslationResult, error) {
+	return s.ProcessScreenshotDetailedWithContext(context.Background(), startX, startY, endX, endY)
+}
+
+// ProcessScreenshotDetailedWithContext 执行截图、OCR、翻译并返回完整结果（可取消）
+func (s *ServiceImpl) ProcessScreenshotDetailedWithContext(ctx context.Context, startX, startY, endX, endY int) (*ScreenshotTranslationResult, error) {
 	if s.AIClient == nil {
 		return nil, fmt.Errorf("AI client 未初始化")
 	}
@@ -150,9 +168,17 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 	started := time.Now()
 	bounds := newScreenshotBounds(startX, startY, endX, endY)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	imageData, err := screenshot.CaptureToBytes(startX, startY, endX, endY)
 	if err != nil {
 		return nil, fmt.Errorf("截图失败: %w", err)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// 创建提示词变量
@@ -173,19 +199,29 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 	}
 
 	streamEnabled := s.options.Stream && s.streamHandler != nil
+	streamCallback := func(stage string) func(string) {
+		if !streamEnabled {
+			return nil
+		}
+		return func(text string) {
+			if ctx.Err() != nil {
+				return
+			}
+			s.emitStream(stage, text)
+		}
+	}
 
 	// 视觉直出翻译模式
 	if s.options.UseVisionForTranslation {
 		directPrompt := prompts.BuildVisionDirectTranslationPrompt(vars)
 		if streamEnabled {
-			translateResponse, err := s.AIClient.ImageToTranslationStream(
+			translateResponse, err := s.AIClient.ImageToTranslationStreamWithContext(
+				ctx,
 				directPrompt,
 				imageData,
 				"image/png",
 				"",
-				func(text string) {
-					s.emitStream("translate", text)
-				},
+				streamCallback("translate"),
 			)
 			if err != nil {
 				return nil, fmt.Errorf("视觉直出翻译失败: %w", err)
@@ -199,7 +235,8 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 			}
 			result.TranslatedText = translatedText
 		} else {
-			translateResponse, err := s.AIClient.ImageToTranslation(
+			translateResponse, err := s.AIClient.ImageToTranslationWithContext(
+				ctx,
 				directPrompt,
 				imageData,
 				"image/png",
@@ -219,9 +256,9 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 		}
 	} else {
 		// 传统模式：先提取，再翻译
-		
+
 		// OCR 阶段
-		extractResponse, err := s.AIClient.ImageToWords(processedExtractPrompt, imageData, "image/png", "")
+		extractResponse, err := s.AIClient.ImageToWordsWithContext(ctx, processedExtractPrompt, imageData, "image/png", "")
 		if err != nil {
 			return nil, fmt.Errorf("文字提取失败: %w", err)
 		}
@@ -242,18 +279,21 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 			return result, nil
 		}
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		// 翻译阶段
 		var translateResponse *ai.ZhipuAIResponse
 		if streamEnabled {
-			translateResponse, err = s.AIClient.TranslateStream(
+			translateResponse, err = s.AIClient.TranslateStreamWithContext(
+				ctx,
 				extractedText,
 				processedTranslatePrompt,
-				func(text string) {
-					s.emitStream("translate", text)
-				},
+				streamCallback("translate"),
 			)
 		} else {
-			translateResponse, err = s.AIClient.Translate(extractedText, processedTranslatePrompt)
+			translateResponse, err = s.AIClient.TranslateWithContext(ctx, extractedText, processedTranslatePrompt)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("翻译失败: %w", err)
@@ -271,18 +311,31 @@ func (s *ServiceImpl) ProcessScreenshotDetailed(startX, startY, endX, endY int) 
 		result.TranslatedText = translatedText
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	result.ProcessingTime = time.Since(started)
 	return result, nil
 }
 
 // TranslateText 翻译纯文本
 func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error) {
+	return s.TranslateTextWithContext(context.Background(), input)
+}
+
+// TranslateTextWithContext 翻译纯文本（可取消）
+func (s *ServiceImpl) TranslateTextWithContext(ctx context.Context, input string) (*TextTranslationResult, error) {
 	if s.AIClient == nil {
 		return nil, fmt.Errorf("AI client 未初始化")
 	}
 
 	if strings.TrimSpace(input) == "" {
 		return nil, fmt.Errorf("翻译内容不能为空")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	started := time.Now()
@@ -301,15 +354,19 @@ func (s *ServiceImpl) TranslateText(input string) (*TextTranslationResult, error
 	var translateResponse *ai.ZhipuAIResponse
 	var err error
 	if streamEnabled {
-		translateResponse, err = s.AIClient.TranslateStream(
+		translateResponse, err = s.AIClient.TranslateStreamWithContext(
+			ctx,
 			input,
 			processedTranslatePrompt,
 			func(text string) {
+				if ctx.Err() != nil {
+					return
+				}
 				s.emitStream("translate", text)
 			},
 		)
 	} else {
-		translateResponse, err = s.AIClient.Translate(input, processedTranslatePrompt)
+		translateResponse, err = s.AIClient.TranslateWithContext(ctx, input, processedTranslatePrompt)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("翻译失败: %w", err)

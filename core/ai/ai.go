@@ -3,6 +3,7 @@ package ai
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -209,7 +210,7 @@ type streamDelta struct {
 	Content interface{} `json:"content"`
 }
 
-func (c *Client) post(request ZhipuAIRequest, target endpoint) (*ZhipuAIResponse, error) {
+func (c *Client) post(ctx context.Context, request ZhipuAIRequest, target endpoint) (*ZhipuAIResponse, error) {
 	url := c.chatCompletionsURL(target.base)
 
 	jsonData, err := json.Marshal(request)
@@ -217,7 +218,7 @@ func (c *Client) post(request ZhipuAIRequest, target endpoint) (*ZhipuAIResponse
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -254,7 +255,7 @@ func (c *Client) post(request ZhipuAIRequest, target endpoint) (*ZhipuAIResponse
 	return &response, nil
 }
 
-func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(string)) (*ZhipuAIResponse, error) {
+func (c *Client) stream(ctx context.Context, request ZhipuAIRequest, target endpoint, onDelta func(string)) (*ZhipuAIResponse, error) {
 	url := c.chatCompletionsURL(target.base)
 	request.Stream = true
 
@@ -263,7 +264,7 @@ func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(st
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -296,6 +297,9 @@ func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(st
 	)
 
 	processData := func(data string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if strings.TrimSpace(data) == "" {
 			return nil
 		}
@@ -327,7 +331,7 @@ func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(st
 			text := streamContentToString(choice.Delta.Content)
 			if text != "" {
 				builder.WriteString(text)
-				if onDelta != nil {
+				if onDelta != nil && ctx.Err() == nil {
 					onDelta(builder.String())
 				}
 			}
@@ -340,7 +344,13 @@ func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(st
 		return nil
 	}
 
-	for scanner.Scan() {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !scanner.Scan() {
+			break
+		}
 		line := scanner.Text()
 		line = strings.TrimRight(line, "\r")
 
@@ -383,6 +393,10 @@ func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(st
 		return nil, fmt.Errorf("failed to read stream: %v", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if dataBuffer.Len() > 0 {
 		if err := processData(dataBuffer.String()); err != nil && err != io.EOF {
 			return nil, err
@@ -409,6 +423,11 @@ func (c *Client) stream(request ZhipuAIRequest, target endpoint, onDelta func(st
 
 // Translate 发送文本消息至聊天接口
 func (c *Client) Translate(userMessage string, systemPrompt string) (*ZhipuAIResponse, error) {
+	return c.TranslateWithContext(context.Background(), userMessage, systemPrompt)
+}
+
+// TranslateWithContext 发送文本消息至聊天接口（可取消）
+func (c *Client) TranslateWithContext(ctx context.Context, userMessage string, systemPrompt string) (*ZhipuAIResponse, error) {
 	messages := []Message{}
 
 	if systemPrompt != "" {
@@ -430,11 +449,16 @@ func (c *Client) Translate(userMessage string, systemPrompt string) (*ZhipuAIRes
 		TopP:        0.9,
 	}
 
-	return c.post(request, c.translate)
+	return c.post(ctx, request, c.translate)
 }
 
 // TranslateStream 以流式方式发送文本消息并回调增量内容
 func (c *Client) TranslateStream(userMessage string, systemPrompt string, onDelta func(string)) (*ZhipuAIResponse, error) {
+	return c.TranslateStreamWithContext(context.Background(), userMessage, systemPrompt, onDelta)
+}
+
+// TranslateStreamWithContext 以流式方式发送文本消息并回调增量内容（可取消）
+func (c *Client) TranslateStreamWithContext(ctx context.Context, userMessage string, systemPrompt string, onDelta func(string)) (*ZhipuAIResponse, error) {
 	messages := []Message{}
 
 	if systemPrompt != "" {
@@ -456,11 +480,16 @@ func (c *Client) TranslateStream(userMessage string, systemPrompt string, onDelt
 		TopP:        0.9,
 	}
 
-	return c.stream(request, c.translate, onDelta)
+	return c.stream(ctx, request, c.translate, onDelta)
 }
 
 // ImageToWords 直接从图像字节数据提取文字
 func (c *Client) ImageToWords(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
+	return c.ImageToWordsWithContext(context.Background(), userMessage, imageData, mimeType, systemPrompt)
+}
+
+// ImageToWordsWithContext 直接从图像字节数据提取文字（可取消）
+func (c *Client) ImageToWordsWithContext(ctx context.Context, userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
 	request := ZhipuAIRequest{
 		Model:       c.vision.model,
 		Messages:    c.buildVisionMessages(userMessage, imageData, mimeType, systemPrompt),
@@ -468,11 +497,16 @@ func (c *Client) ImageToWords(userMessage string, imageData []byte, mimeType str
 		TopP:        0.9,
 	}
 
-	return c.post(request, c.vision)
+	return c.post(ctx, request, c.vision)
 }
 
 // ImageToTranslation 使用视觉模型直接生成翻译结果
 func (c *Client) ImageToTranslation(userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
+	return c.ImageToTranslationWithContext(context.Background(), userMessage, imageData, mimeType, systemPrompt)
+}
+
+// ImageToTranslationWithContext 使用视觉模型直接生成翻译结果（可取消）
+func (c *Client) ImageToTranslationWithContext(ctx context.Context, userMessage string, imageData []byte, mimeType string, systemPrompt string) (*ZhipuAIResponse, error) {
 	request := ZhipuAIRequest{
 		Model:       c.vision.model,
 		Messages:    c.buildVisionMessages(userMessage, imageData, mimeType, systemPrompt),
@@ -480,11 +514,16 @@ func (c *Client) ImageToTranslation(userMessage string, imageData []byte, mimeTy
 		TopP:        0.9,
 	}
 
-	return c.post(request, c.vision)
+	return c.post(ctx, request, c.vision)
 }
 
 // ImageToTranslationStream 使用视觉模型流式输出翻译结果
 func (c *Client) ImageToTranslationStream(userMessage string, imageData []byte, mimeType string, systemPrompt string, onDelta func(string)) (*ZhipuAIResponse, error) {
+	return c.ImageToTranslationStreamWithContext(context.Background(), userMessage, imageData, mimeType, systemPrompt, onDelta)
+}
+
+// ImageToTranslationStreamWithContext 使用视觉模型流式输出翻译结果（可取消）
+func (c *Client) ImageToTranslationStreamWithContext(ctx context.Context, userMessage string, imageData []byte, mimeType string, systemPrompt string, onDelta func(string)) (*ZhipuAIResponse, error) {
 	request := ZhipuAIRequest{
 		Model:       c.vision.model,
 		Messages:    c.buildVisionMessages(userMessage, imageData, mimeType, systemPrompt),
@@ -492,7 +531,7 @@ func (c *Client) ImageToTranslationStream(userMessage string, imageData []byte, 
 		TopP:        0.9,
 	}
 
-	return c.stream(request, c.vision, onDelta)
+	return c.stream(ctx, request, c.vision, onDelta)
 }
 
 func (c *Client) buildVisionMessages(userMessage string, imageData []byte, mimeType string, systemPrompt string) []Message {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -102,9 +103,9 @@ func main() {
 	)
 
 	// 设置截图处理函数
-	screenshotManager.SetCaptureHandler(func(startX, startY, endX, endY int) bool {
+	screenshotManager.SetCaptureHandler(func(ctx context.Context, startX, startY, endX, endY int) bool {
 		// 使用翻译服务处理截图
-		return translationService.ProcessScreenshot(startX, startY, endX, endY)
+		return translationService.ProcessScreenshotWithContext(ctx, startX, startY, endX, endY)
 	})
 
 	// 注册热键，当触发时启动截图

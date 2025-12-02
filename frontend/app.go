@@ -147,7 +147,14 @@ func (a *App) runScreenshotCapture(done chan struct{}) {
 	}
 }
 
-
+// cancelActiveTranslation 强制终止当前翻译相关的 UI 状态
+func (a *App) cancelActiveTranslation() {
+	a.endStream(true)
+	if a.overlayMgr != nil {
+		a.overlayMgr.Close()
+	}
+	a.emit(eventTranslationIdle, nil)
+}
 
 // GetSettings 返回当前配置
 func (a *App) GetSettings() (*SettingsDTO, error) {
@@ -430,7 +437,7 @@ func (a *App) computeOverlayRect(startX, startY, endX, endY int) overlay.Rect {
 	}
 }
 
-func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
+func (a *App) handleScreenshotCapture(ctx context.Context, startX, startY, endX, endY int) bool {
 	streamEnabled := a.settings.EnableStreamOutput
 	shouldCleanup := false
 	if streamEnabled {
@@ -451,7 +458,14 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		"message": "正在识别文字…",
 	})
 
-	result, err := a.translationSvc.ProcessScreenshotDetailed(startX, startY, endX, endY)
+	result, err := a.translationSvc.ProcessScreenshotDetailedWithContext(ctx, startX, startY, endX, endY)
+	if err == context.Canceled {
+		if streamEnabled {
+			shouldCleanup = false
+		}
+		a.cancelActiveTranslation()
+		return false
+	}
 	if err != nil {
 		a.emit(eventTranslationError, map[string]string{
 			"stage":   "screenshot",
@@ -460,7 +474,6 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		// 不自动关闭overlay，让用户可以看到错误信息并手动关闭
 		return false
 	}
-
 
 	uiResult := &UITranslationResult{
 		OriginalText:   result.ExtractedText,
@@ -515,14 +528,6 @@ func (a *App) handleScreenshotCapture(startX, startY, endX, endY int) bool {
 		a.endStream(false)
 		shouldCleanup = false
 	}
-
-	// 调试日志：打印即将发送的结果
-	preview := uiResult.TranslatedText
-	if len(preview) > 100 {
-		preview = preview[:100]
-	}
-	a.logError(fmt.Sprintf("🚀 [后端] 准备发送 translation:result, translatedText 长度: %d, 内容: %s",
-		len(uiResult.TranslatedText), preview))
 
 	a.emit(eventTranslationResult, uiResult)
 	a.postProcessTranslation(uiResult.TranslatedText)

@@ -15,7 +15,7 @@ import (
 )
 
 // CaptureHandler 截图处理函数类型
-type CaptureHandler func(startX, startY, endX, endY int) bool
+type CaptureHandler func(ctx context.Context, startX, startY, endX, endY int) bool
 
 // Manager 截图管理器
 type Manager struct {
@@ -84,6 +84,8 @@ func (m *Manager) StartOnce() {
 
 	var startX, startY, endX, endY int
 	mousePressed := false
+	var translationStarted bool
+	var translationDone chan bool
 
 	for {
 		select {
@@ -91,11 +93,28 @@ func (m *Manager) StartOnce() {
 			fmt.Println("截图任务已被取消")
 			fmt.Println("截图监听已结束，等待下次热键触发...")
 			return
+		case handled, ok := <-translationDone:
+			if ok {
+				if handled {
+					fmt.Println("截图完成，等待下次热键触发...")
+				}
+				fmt.Println("截图监听已结束，等待下次热键触发...")
+				return
+			}
 		case ev, ok := <-evChan:
 			if !ok {
 				fmt.Println("事件通道已关闭，退出截图监听")
 				fmt.Println("截图监听已结束，等待下次热键触发...")
 				return
+			}
+
+			// 翻译阶段仅关注取消事件，避免额外干扰
+			if translationStarted {
+				if ev.Kind == 4 && ev.Keycode == hook.Keycode["esc"] {
+					fmt.Println("翻译已被取消")
+					cancel()
+				}
+				continue
 			}
 
 			switch ev.Kind {
@@ -113,12 +132,17 @@ func (m *Manager) StartOnce() {
 
 					handler := m.getCaptureHandler()
 					if handler != nil {
-						handler(startX, startY, endX, endY)
+						translationDone = make(chan bool, 1)
+						translationStarted = true
+						go func() {
+							defer close(translationDone)
+							translationDone <- handler(ctx, startX, startY, endX, endY)
+						}()
+					} else {
+						fmt.Println("未设置截图处理函数，直接退出")
+						fmt.Println("截图监听已结束，等待下次热键触发...")
+						return
 					}
-
-					fmt.Println("截图完成，等待下次热键触发...")
-					fmt.Println("截图监听已结束，等待下次热键触发...")
-					return
 				}
 			case 4: // 按下Esc键取消截图
 				if ev.Keycode == hook.Keycode["esc"] {
