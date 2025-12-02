@@ -45,6 +45,32 @@ jobs:
         cd frontend/build/bin
         cp frontend.exe Translater-${{ github.ref_name }}.exe
         
+    - name: Collect release commits
+      id: commits
+      shell: pwsh
+      run: |
+        git fetch --tags --force
+        $currentTag = "${{ github.ref_name }}"
+        $previousTag = ""
+        try {
+          $previousTag = git describe --tags --abbrev=0 "$currentTag^"
+        } catch {
+          $previousTag = ""
+        }
+        if ([string]::IsNullOrEmpty($previousTag)) {
+          $log = "首次发布，暂无历史 Commit。"
+        } else {
+          $logEntries = git log "$previousTag..$currentTag" --pretty=format:"- %s (%h)"
+          if ($logEntries) {
+            $log = $logEntries -join "`n"
+          } else {
+            $log = "自 $previousTag 起无新的 Commit。"
+          }
+        }
+        $log = $log -replace "`r", ""
+        $output = @("log<<'EOF'", $log, "EOF")
+        $output | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
@@ -55,6 +81,9 @@ jobs:
           
           ### 📦 下载说明
             - 程序下载之后无需安装，双击exe文件配置apikey后即可直接使用。
+          
+          ### 📝 更新内容
+          ${{ steps.commits.outputs.log }}
         files: |
           frontend/build/bin/Translater-${{ github.ref_name }}.exe
         draft: false
